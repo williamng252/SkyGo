@@ -39,7 +39,7 @@
 | Mã | Công việc | Kết quả cần đạt | Trạng thái |
 | --- | --- | --- | --- |
 | DB-01 | Chốt schema 11 bảng, khóa và ràng buộc | Có script tạo database mới; cung cấp cùng bộ script cho cả nhóm | Đã làm |
-| DB-02 | Dữ liệu mẫu và bảng mô tả cách gọi SP | Có dữ liệu đủ cho tìm chuyến/đặt vé; thống nhất tên, tham số, cột trả về với người 1 | Chưa làm |
+| DB-02 | Dữ liệu mẫu và bảng mô tả cách gọi SP | Có dữ liệu đủ cho tìm chuyến/đặt vé; thống nhất tên, tham số, cột trả về với người 1 | Đã làm |
 | DB-03 | SP tài khoản, hồ sơ, tìm chuyến | Có lệnh gọi thử; tìm đúng tuyến/ngày/hạng, trả cả giá và chỗ còn | Chưa làm |
 | DB-04 | SP tạo đơn và vé | Kiểm tra giá/chỗ ở CSDL, tạo đơn và các vé trong transaction; không để dữ liệu dở dang | Chưa làm |
 | DB-05 | SP xác nhận thanh toán | Cập nhật giao dịch, đơn và vé nhất quán; kiểm tra hạn đơn, số tiền, chống xác nhận thành công lặp | Chưa làm |
