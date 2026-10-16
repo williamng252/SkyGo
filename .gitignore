@@ -1,0 +1,26 @@
+# Maven build directory
+target/
+
+# Compiled class file
+*.class
+
+# Log file
+*.log
+
+# Native auth DLL redundant
+mssql-jdbc_auth-*.dll
+
+# Environment variables
+.env
+
+# IDE and Editor files
+.idea/
+*.iml
+.vscode/
+.settings/
+.project
+.classpath
+
+# OS files
+.DS_Store
+Thumbs.db

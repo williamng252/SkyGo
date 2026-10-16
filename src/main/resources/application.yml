@@ -1,0 +1,23 @@
+server:
+  port: ${SERVER_PORT:8080}
+spring:
+  application:
+    name: skygo
+  datasource:
+    url: ${SKYGO_DB_URL:jdbc:sqlserver://127.0.0.1:${SKYGO_DB_PORT:1434};databaseName=SkyGo_Cnpm;integratedSecurity=true;encrypt=false;trustServerCertificate=true}
+    username: ${SKYGO_DB_USERNAME:}
+    password: ${SKYGO_DB_PASSWORD:}
+    driver-class-name: com.microsoft.sqlserver.jdbc.SQLServerDriver
+    hikari:
+      connection-timeout: 30000
+      minimum-idle: 2
+      maximum-pool-size: 5
+  jackson:
+    default-property-inclusion: non_null
+  web:
+    resources:
+      static-locations: classpath:/static/
+logging:
+  level:
+    vn.skygo: INFO
+    com.zaxxer.hikari: WARN
