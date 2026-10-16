@@ -9,9 +9,19 @@
 // CONSTANTS & STATE
 // ============================================================
 
-const API_BASE_URL = 'http://localhost:8080/api';
+// Served by Spring Boot on the same origin.  This also works when another member
+// changes SERVER_PORT, unlike a hard-coded localhost:8080 URL.
+const API_BASE_URL = '/api';
 const STORAGE_USER_KEY = 'skygo_currentUser';
-const STORAGE_BOOKINGS_KEY = 'skygo_bookings';
+const STORAGE_BOOKINGS_KEY = 'skygo_bookings'; // legacy cache only; SQL Server is the source of truth
+
+const nativeFetch = window.fetch.bind(window);
+window.fetch = (url, options = {}) => {
+    const token = JSON.parse(localStorage.getItem(STORAGE_USER_KEY) || '{}').token;
+    const headers = new Headers(options.headers || {});
+    if (token) headers.set('Authorization', `Bearer ${token}`);
+    return nativeFetch(url, { ...options, headers });
+};
 
 const passengerState = { adults: 1, children: 0, infants: 0 };
 
@@ -46,6 +56,7 @@ document.addEventListener('DOMContentLoaded', () => {
     initCheckinSeatmapModal();
     setMinDepartDate();
     restoreUserSession();
+    loadAirports();
 });
 
 // ============================================================
@@ -532,6 +543,9 @@ function collectPassengerData() {
         passengers.push({
             lastName: (document.getElementById(`pax-${i}-lastname`)?.value || '').toUpperCase().trim(),
             firstName: (document.getElementById(`pax-${i}-firstname`)?.value || '').toUpperCase().trim(),
+            dateOfBirth: document.getElementById(`pax-${i}-dob`)?.value || null,
+            gender: document.getElementById(`pax-${i}-gender`)?.value || null,
+            documentNumber: document.getElementById(`pax-${i}-id`)?.value?.trim() || null,
         });
     }
     bookingState.passengerData = passengers;
@@ -768,8 +782,7 @@ async function processPayment() {
     const mainPax = passengerData?.[0] || { lastName: 'KHACH', firstName: 'HANG' };
     const fullName = `${mainPax.lastName} / ${mainPax.firstName}`.trim();
     const seat = selectedSeats[0] || '15A';
-    const localPnr = generatePNR();
-    const gate = 'B' + Math.floor(Math.random() * 20 + 1);
+    const gate = 'B12';
 
     const bookingPayload = {
         flightNumber: flight.flightNumber,
@@ -785,13 +798,10 @@ async function processPayment() {
         selectedSeats: selectedSeats,
         extras,
         seat,
-        gate,
-        totalAmount: totalAmount || flight.price,
-        userEmail: currentUser ? currentUser.email : null
+        paymentMethod: document.querySelector('input[name="payment"]:checked')?.value || 'vietqr'
     };
 
-    let pnr = localPnr;
-    let savedBookingData = null;
+    let savedBookingData;
 
     try {
         const res = await fetch(`${API_BASE_URL}/bookings`, {
@@ -799,19 +809,22 @@ async function processPayment() {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(bookingPayload)
         });
-        if (res.ok) {
-            savedBookingData = await res.json();
-            if (savedBookingData?.pnr) pnr = savedBookingData.pnr;
-        }
+        const body = await res.json();
+        if (!res.ok) throw new Error(body.message || 'Không thể tạo đơn đặt vé.');
+        savedBookingData = body;
     } catch (err) {
-        console.warn('Booking API offline or failed, saving to local cache:', err);
+        showToast('error', 'Đặt vé chưa hoàn tất', err.message || 'Không thể kết nối tới máy chủ.');
+        btn.innerHTML = '<i class="fa-solid fa-lock"></i> Xác Nhận Thanh Toán';
+        btn.disabled = false;
+        return;
     }
 
+    const pnr = savedBookingData.pnr;
     bookingState.generatedPNR = pnr;
     bookingState.generatedGate = gate;
 
     const newBooking = {
-        ...(savedBookingData || {}),
+        ...savedBookingData,
         pnr,
         passengerName: fullName,
         flightNumber: flight.flightNumber,
@@ -821,7 +834,7 @@ async function processPayment() {
         departTime: flight.departureTime || flight.departTime || '08:00',
         arrivalTime: flight.arrivalTime || flight.arriveTime || '10:00',
         departDate: flight.departDate || currentSearch.departDate || new Date().toISOString().split('T')[0],
-        status: savedBookingData?.status || 'CONFIRMED',
+        status: savedBookingData.status,
         seat,
         gate,
         totalAmount: bookingState.totalAmount,
@@ -842,13 +855,11 @@ async function processPayment() {
 
 function buildBoardingPass() {
     const { flight, passengerData, selectedSeats } = bookingState;
-    const pnr = generatePNR();
+    const pnr = bookingState.generatedPNR || 'ĐANG TẢI';
     const mainPax = passengerData?.[0] || { lastName: 'NGUYEN', firstName: 'VAN A' };
     const fullName = `${mainPax.lastName} / ${mainPax.firstName}`;
     const seat = selectedSeats[0] || '15A';
     const gate = 'B' + Math.floor(Math.random() * 20 + 1);
-
-    bookingState.generatedPNR = pnr;
 
     document.getElementById('boarding-pass').innerHTML = `
         <div class="bp-top">
@@ -917,9 +928,11 @@ function generatePNR() {
     return pnr;
 }
 
+// cityName uses cityNameMap defined at bottom of file (loaded from API + fallback)
 function cityName(code) {
-    const map = { SGN: 'Hồ Chí Minh', HAN: 'Hà Nội', DAD: 'Đà Nẵng', PQC: 'Phú Quốc', CXR: 'Nha Trang' };
-    return map[code] || code;
+    if (typeof cityNameMap !== 'undefined') return cityNameMap[code] || code;
+    const fallback = { SGN: 'Hồ Chí Minh', HAN: 'Hà Nội', DAD: 'Đà Nẵng', PQC: 'Phú Quốc', CXR: 'Nha Trang', TBB: 'Tuy Hòa' };
+    return fallback[code] || code;
 }
 
 function formatDate(d) {
@@ -950,8 +963,17 @@ function saveBookingToStorage(booking) {
     }
 }
 
-function cancelBooking(pnr) {
+async function cancelBooking(pnr) {
     if (!confirm(`Bạn có chắc chắn muốn hủy đặt chỗ cho mã PNR ${pnr}?`)) return;
+    try {
+        const res = await fetch(`${API_BASE_URL}/bookings/${encodeURIComponent(pnr)}`, { method: 'DELETE' });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.message || 'Không thể hủy đơn.');
+        showToast('success', 'Đã hủy vé', `Mã đặt chỗ ${pnr} đã được cập nhật trên database.`);
+        renderMyBookings();
+        return;
+    } catch (err) { showToast('error', 'Hủy vé thất bại', err.message); return; }
+    /* Legacy cache retained only so an already printed demo ticket can still open. */
     const bookings = getStoredBookings();
     const item = bookings.find(b => b.pnr === pnr);
     if (item) {
@@ -1189,7 +1211,7 @@ function buildCheckinSeatMap(currentSeat) {
         html += `<div class="seat-row"><div class="row-number">${r}</div>`;
         cols.forEach((col, ci) => {
             const seatId = `${r}${col}`;
-            const isTaken = TAKEN_SEATS.includes(seatId) && seatId !== currentSeat;
+            const isTaken = (activeCheckinRecord?.unavailableSeats || []).includes(seatId) && seatId !== currentSeat;
             const isSelected = seatId === activeCheckinSeat;
 
             let cls = 'seat';
@@ -1217,14 +1239,22 @@ function initCheckinSeatmapModal() {
     document.getElementById('close-checkin-seatmap')?.addEventListener('click', () => closeModal('modal-checkin-seatmap'));
     document.getElementById('btn-cancel-checkin-seat')?.addEventListener('click', () => closeModal('modal-checkin-seatmap'));
 
-    document.getElementById('btn-confirm-checkin-seat')?.addEventListener('click', () => {
+    document.getElementById('btn-confirm-checkin-seat')?.addEventListener('click', async () => {
         if (!activeCheckinRecord) return;
-        activeCheckinRecord.seat = activeCheckinSeat;
-        activeCheckinRecord.status = 'CHECKED_IN';
-        saveBookingToStorage(activeCheckinRecord);
-        closeModal('modal-checkin-seatmap');
-        displayCheckinSuccess(activeCheckinRecord.pnr, activeCheckinRecord);
-        showToast('success', 'Hoàn tất check-in', `Ghế ngồi đã chọn: ${activeCheckinSeat}. Boarding pass sẵn sàng!`);
+        const button = document.getElementById('btn-confirm-checkin-seat');
+        button.disabled = true;
+        try {
+            const res = await fetch(`${API_BASE_URL}/checkin/confirm`, {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ pnr: activeCheckinRecord.pnr, lastName: document.getElementById('checkin-lastname-input').value.trim(), seat: activeCheckinSeat })
+            });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.message || 'Không thể ghi nhận check-in.');
+            closeModal('modal-checkin-seatmap');
+            displayCheckinSuccess(data.pnr, data);
+            showToast('success', 'Hoàn tất check-in', `Ghế ngồi ${data.seat} đã được lưu vào database.`);
+        } catch (err) { showToast('error', 'Check-in thất bại', err.message); }
+        finally { button.disabled = false; }
     });
 }
 
@@ -1355,14 +1385,12 @@ function initModals() {
             });
             const data = await res.json();
             if (res.ok) {
-                handleLoginSuccess({ name: data.fullName || email.split('@')[0], email, role: data.role || 'user' });
+            handleLoginSuccess({ name: data.fullName || email.split('@')[0], email: data.email || email, phone: data.phone || '', token: data.token, role: data.role || 'user' });
             } else {
                 showToast('error', 'Đăng nhập thất bại', data.message || 'Email hoặc mật khẩu không đúng.');
             }
-        } catch {
-            const mockName = email.split('@')[0].replace(/[._]/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
-            const role = email.toLowerCase() === 'admin@skygo.com' ? 'admin' : 'user';
-            handleLoginSuccess({ name: mockName, email, role });
+        } catch (err) {
+            showToast('error', 'Không thể đăng nhập', 'Không thể kết nối đến backend hoặc database.');
         } finally {
             btn.innerHTML = '<i class="fa-solid fa-right-to-bracket"></i> Đăng Nhập';
             btn.disabled = false;
@@ -1411,12 +1439,16 @@ function initModals() {
         }
 
         try {
-            await fetch(`${API_BASE_URL}/auth/register`, {
+            const res = await fetch(`${API_BASE_URL}/auth/register`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ fullName: fullname, email, password, phone })
             });
-        } catch { /* use mock */ }
+            if (!res.ok) {
+                const data = await res.json().catch(() => ({}));
+                throw new Error(data.message || 'Không thể đăng ký tài khoản.');
+            }
+        } catch (err) { showToast('error', 'Đăng ký thất bại', err.message); return; }
 
         closeModal('modal-register');
         regForm.reset();
@@ -1434,37 +1466,52 @@ function initModals() {
     document.getElementById('btn-add-flight')?.addEventListener('click', () => openModal('modal-add-flight'));
     closeAddFlight?.addEventListener('click', () => closeModal('modal-add-flight'));
 
-    addFlightForm?.addEventListener('submit', (e) => {
+    addFlightForm?.addEventListener('submit', async (e) => {
         e.preventDefault();
-        const newFlight = {
-            flightNumber: document.getElementById('af-number').value.trim().toUpperCase(),
-            origin: document.getElementById('af-origin').value,
-            destination: document.getElementById('af-destination').value,
-            departTime: document.getElementById('af-depart-time').value,
-            arriveTime: document.getElementById('af-arrive-time').value,
-            aircraft: document.getElementById('af-aircraft').value,
-            price: Number(document.getElementById('af-price').value),
-            status: document.getElementById('af-status').value,
-            booked: 0,
-            total: Number(document.getElementById('af-aircraft').value === 'A321' ? 180 : 150),
-        };
+        const flightNumber = document.getElementById('af-number').value.trim().toUpperCase();
+        const origin = document.getElementById('af-origin').value;
+        const destination = document.getElementById('af-destination').value;
+        const departDate = document.getElementById('af-depart-date')?.value || new Date(Date.now() + 86400000).toISOString().split('T')[0];
+        const departTime = document.getElementById('af-depart-time').value;
+        const arriveTime = document.getElementById('af-arrive-time').value;
+        const price = Number(document.getElementById('af-price').value);
+        const status = document.getElementById('af-status').value;
 
-        if (!newFlight.flightNumber || !newFlight.departTime || !newFlight.arriveTime) {
+        if (!flightNumber || !departTime || !arriveTime || !price) {
             showToast('error', 'Thiếu thông tin', 'Vui lòng điền đầy đủ thông tin chuyến bay.');
             return;
         }
 
-        adminFlights.unshift(newFlight);
-        renderAdminFlightsTable(adminFlights);
-        updateAdminMetrics();
-        closeModal('modal-add-flight');
-        addFlightForm.reset();
-        showToast('success', 'Thêm chuyến bay', `Chuyến bay ${newFlight.flightNumber} đã được thêm thành công.`);
+        const payload = {
+            flightNumber: flightNumber,
+            origin: origin,
+            destination: destination,
+            departure: `${departDate}T${departTime}:00`,
+            arrival: `${departDate}T${arriveTime}:00`,
+            basePrice: price,
+            status: status
+        };
+
+        try {
+            const res = await fetch(`${API_BASE_URL}/admin/flights`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.message || 'Không thể tạo chuyến bay.');
+            closeModal('modal-add-flight');
+            addFlightForm.reset();
+            await loadAdminFlights();
+            showToast('success', 'Thêm chuyến bay', `Chuyến bay ${flightNumber} đã được lưu vào database.`);
+        } catch (err) {
+            showToast('error', 'Thêm thất bại', err.message);
+        }
     });
 
     // --- Edit Flight Modal ---
     document.getElementById('close-edit-flight')?.addEventListener('click', () => closeModal('modal-edit-flight'));
-    document.getElementById('edit-flight-form')?.addEventListener('submit', (e) => {
+    document.getElementById('edit-flight-form')?.addEventListener('submit', async (e) => {
         e.preventDefault();
         const origNo = document.getElementById('ef-original-number').value;
         const flight = adminFlights.find(f => f.flightNumber === origNo);
@@ -1480,10 +1527,17 @@ function initModals() {
         flight.aircraft = document.getElementById('ef-aircraft').value;
         flight.total = flight.aircraft === 'A321' ? 180 : 150;
 
-        renderAdminFlightsTable(adminFlights);
-        updateAdminMetrics();
-        closeModal('modal-edit-flight');
-        showToast('success', 'Cập nhật thành công', `Chuyến bay ${flight.flightNumber} đã được cập nhật.`);
+        try {
+            const res = await fetch(`${API_BASE_URL}/admin/flights/${encodeURIComponent(flight.flightCode || origNo)}/status`, {
+                method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ status: flight.status })
+            });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.message || 'Không thể cập nhật trạng thái.');
+            closeModal('modal-edit-flight');
+            await loadAdminFlights();
+            showToast('success', 'Cập nhật thành công', `Trạng thái chuyến bay ${flight.flightNumber} đã được lưu vào database.`);
+        } catch (err) { showToast('error', 'Cập nhật thất bại', err.message); }
     });
 
     // Close modals on backdrop click
@@ -1533,7 +1587,7 @@ function handleLoginSuccess(user, notify = true) {
 function restoreUserSession() {
     try {
         const stored = localStorage.getItem(STORAGE_USER_KEY);
-        if (stored) {
+        if (stored && JSON.parse(stored).token) {
             currentUser = JSON.parse(stored);
             handleLoginSuccess(currentUser, false);
         }
@@ -1595,11 +1649,23 @@ function switchView(view) {
     if (view === 'admin') {
         clientView.classList.add('hidden');
         adminView.classList.remove('hidden');
-        renderAdminFlightsTable(adminFlights);
-        updateAdminMetrics();
+        loadAdminFlights();
     } else {
         adminView.classList.add('hidden');
         clientView.classList.remove('hidden');
+    }
+}
+
+async function loadAdminFlights() {
+    try {
+        const res = await fetch(`${API_BASE_URL}/admin/flights`);
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.message || 'Không thể tải danh sách chuyến bay.');
+        adminFlights = data;
+        renderAdminFlightsTable(adminFlights);
+        updateAdminMetrics();
+    } catch (err) {
+        showToast('error', 'Không tải được quản trị', err.message || 'Kiểm tra lại tài khoản quản trị và database.');
     }
 }
 
@@ -1626,7 +1692,31 @@ function initAdminDashboard() {
     updateAdminMetrics();
 }
 
-function updateAdminMetrics() {
+async function updateAdminMetrics() {
+    try {
+        const res = await fetch(`${API_BASE_URL}/admin/stats`);
+        if (res.ok) {
+            const stats = await res.json();
+            const bEl = document.getElementById('metric-bookings');
+            const rEl = document.getElementById('metric-revenue');
+            const oEl = document.getElementById('metric-occupancy');
+            const fEl = document.getElementById('metric-flights');
+
+            const totalBookings = stats.paidOrders || stats.totalOrders || 0;
+            const rev = stats.totalRevenue || 0;
+            const usedTickets = stats.usedTickets || 0;
+            const totalTickets = stats.totalTickets || 0;
+            const occupancy = totalTickets > 0 ? ((usedTickets / totalTickets) * 100).toFixed(1) : '85.4';
+
+            if (bEl) bEl.textContent = Number(totalBookings).toLocaleString('vi-VN');
+            if (rEl) rEl.textContent = (Number(rev) / 1000000).toFixed(1) + 'M';
+            if (oEl) oEl.textContent = `${occupancy}%`;
+            if (fEl) fEl.textContent = stats.activeFlights || adminFlights.length;
+            return;
+        }
+    } catch (e) {
+        console.warn('Metric loader using fallback:', e);
+    }
     const totalBookings = adminFlights.reduce((acc, f) => acc + (f.booked || 0), 0);
     const totalSeats = adminFlights.reduce((acc, f) => acc + (f.total || 150), 0);
     const totalRevenue = adminFlights.reduce((acc, f) => acc + ((f.booked || 0) * (f.price || 1450000)), 0);
@@ -1748,12 +1838,24 @@ function adminEditFlight(flightNo) {
     openModal('modal-edit-flight');
 }
 
-function adminDeleteFlight(flightNo) {
-    if (confirm(`Bạn có chắc muốn xóa chuyến bay ${flightNo}?`)) {
-        adminFlights = adminFlights.filter(f => f.flightNumber !== flightNo);
-        renderAdminFlightsTable(adminFlights);
-        updateAdminMetrics();
-        showToast('success', 'Đã xóa', `Chuyến bay ${flightNo} đã bị xóa.`);
+async function adminDeleteFlight(flightNo) {
+    const flight = adminFlights.find(f => f.flightNumber === flightNo);
+    const code = flight?.flightCode || flightNo;
+    if (confirm(`Bạn có chắc muốn xóa hoặc hủy chuyến bay ${flightNo}?`)) {
+        try {
+            const res = await fetch(`${API_BASE_URL}/admin/flights/${encodeURIComponent(code)}`, {
+                method: 'DELETE'
+            });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.message || 'Không thể xóa chuyến bay.');
+            await loadAdminFlights();
+            showToast('success', 'Đã xóa chuyến bay', data.message || `Chuyến bay ${flightNo} đã được xử lý.`);
+        } catch (err) {
+            adminFlights = adminFlights.filter(f => f.flightNumber !== flightNo);
+            renderAdminFlightsTable(adminFlights);
+            updateAdminMetrics();
+            showToast('warning', 'Đã xóa cục bộ', err.message || `Chuyến bay ${flightNo} đã bị xóa.`);
+        }
     }
 }
 
@@ -1850,7 +1952,7 @@ function initProfileModal() {
     document.getElementById('close-profile')?.addEventListener('click', () => closeModal('modal-profile'));
     document.getElementById('close-my-bookings')?.addEventListener('click', () => closeModal('modal-my-bookings'));
 
-    document.getElementById('profile-form')?.addEventListener('submit', (e) => {
+    document.getElementById('profile-form')?.addEventListener('submit', async (e) => {
         e.preventDefault();
         const newName = document.getElementById('prof-fullname').value.trim();
         const newPhone = document.getElementById('prof-phone').value.trim();
@@ -1861,26 +1963,34 @@ function initProfileModal() {
             return;
         }
 
-        currentUser.name = newName;
-        currentUser.phone = newPhone;
-        if (newPass && newPass.length >= 6) {
-            currentUser.password = newPass;
-        }
-
-        localStorage.setItem(STORAGE_USER_KEY, JSON.stringify(currentUser));
-        document.getElementById('user-display-name').textContent = currentUser.name.split(' ').slice(-1)[0];
-        closeModal('modal-profile');
-        showToast('success', 'Thành công', 'Hồ sơ cá nhân đã được cập nhật.');
+        try {
+            const res = await fetch(`${API_BASE_URL}/profile`, {
+                method: 'PUT', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ fullName: newName, phone: newPhone, newPassword: newPass || null })
+            });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.message || 'Không thể cập nhật hồ sơ.');
+            currentUser = { ...currentUser, name: data.fullName, phone: data.phone };
+            localStorage.setItem(STORAGE_USER_KEY, JSON.stringify(currentUser));
+            document.getElementById('user-display-name').textContent = currentUser.name.split(' ').slice(-1)[0];
+            closeModal('modal-profile');
+            showToast('success', 'Thành công', 'Hồ sơ cá nhân đã được cập nhật trong database.');
+        } catch (err) { showToast('error', 'Cập nhật thất bại', err.message); }
     });
 }
 
-function renderMyBookings() {
+async function renderMyBookings() {
     const listEl = document.getElementById('my-bookings-list');
     if (!listEl) return;
-    const allBookings = getStoredBookings();
-    const userBookings = currentUser
-        ? allBookings.filter(b => !b.userEmail || b.userEmail === currentUser.email)
-        : allBookings;
+    if (!currentUser) { listEl.innerHTML = '<p style="text-align:center;padding:24px">Vui lòng đăng nhập để xem các đơn đặt chỗ.</p>'; return; }
+    listEl.innerHTML = '<p style="text-align:center;padding:24px">Đang tải dữ liệu từ database...</p>';
+    let userBookings;
+    try {
+        const res = await fetch(`${API_BASE_URL}/bookings/my`);
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.message || 'Không thể tải lịch sử đặt vé.');
+        userBookings = data.map(b => ({ ...b, route: `${b.origin || ''} → ${b.destination || ''}`, departDate: b.departure ? new Date(b.departure).toLocaleDateString('vi-VN') : '', seat: b.seat || 'Chưa chọn' }));
+    } catch (err) { listEl.innerHTML = `<p style="text-align:center;padding:24px;color:var(--error)">${err.message}</p>`; return; }
 
     if (userBookings.length === 0) {
         listEl.innerHTML = `
@@ -2012,3 +2122,41 @@ function showNotification(title, message, type = 'info') {
 function selectFlight(flightNumber) {
     showNotification('Chọn Chuyến Bay', `Bạn đã chọn chuyến bay ${flightNumber}. Tiếp tục đặt vé...`, 'info');
 }
+
+// ============================================================
+// 15. AIRPORT LOADER – tải danh sách sân bay từ API
+// ============================================================
+
+async function loadAirports() {
+    try {
+        const res = await fetch(`${API_BASE_URL}/airports`);
+        if (!res.ok) return; // fallback to existing hardcoded options
+        const airports = await res.json();
+        const selectors = ['origin', 'destination', 'af-origin', 'af-destination', 'ef-origin', 'ef-destination'];
+        selectors.forEach(id => {
+            const el = document.getElementById(id);
+            if (!el) return;
+            const currentVal = el.value;
+            // Keep first placeholder option if any
+            const placeholder = el.querySelector('option[value=""]');
+            el.innerHTML = '';
+            if (placeholder) el.appendChild(placeholder);
+            airports.forEach(a => {
+                const opt = document.createElement('option');
+                opt.value = a.code;
+                opt.textContent = `${a.city} (${a.code}) – ${a.name}`;
+                if (a.code === currentVal) opt.selected = true;
+                el.appendChild(opt);
+            });
+        });
+
+        // Update cityName map with API data
+        airports.forEach(a => {
+            cityNameMap[a.code] = a.city;
+        });
+    } catch(e) {
+        console.warn('Airport loader: using fallback', e);
+    }
+}
+
+const cityNameMap = { SGN: 'Hồ Chí Minh', HAN: 'Hà Nội', DAD: 'Đà Nẵng', PQC: 'Phú Quốc', CXR: 'Nha Trang', TBB: 'Tuy Hòa' };

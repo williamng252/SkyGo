@@ -26,13 +26,13 @@
 
 | Mã | Công việc | Kết quả cần đạt | Trạng thái |
 | --- | --- | --- | --- |
-| BE-01 | Tạo khung dự án, cấu hình mẫu và kết nối SQL Server | Thành viên khác có thể chạy theo README; có chức năng thử gọi SP | Chưa làm |
-| BE-02 | Đăng ký, đăng nhập, phiên đăng nhập và phân quyền | Mật khẩu được băm bằng thư viện ở backend; chặn khách truy cập chức năng admin | Chưa làm |
-| BE-03 | Hồ sơ khách hàng và tìm chuyến | Gọi đúng SP, trả dữ liệu và lỗi để frontend hiển thị | Chưa làm |
-| BE-04 | Đặt vé, thanh toán mô phỏng, PNR và lịch sử | Nhận thông tin hành khách, gọi SP, trả mã đơn/PNR và trạng thái xử lý | Chưa làm |
-| BE-05 | Check-in và thẻ lên máy bay | Gọi SP, kiểm tra quyền truy cập đặt chỗ, trả ghế và thông tin thẻ | Chưa làm |
-| BE-06 | Quản trị và thống kê | Nối chức năng quản lý chuyến, trạng thái, đơn, khách hàng và báo cáo bán vé | Chưa làm |
-| BE-07 | Ghép bản cuối, hướng dẫn chạy | Chạy được luồng demo từ đầu trên máy thành viên khác | Chưa làm |
+| BE-01 | Tạo khung dự án, cấu hình mẫu và kết nối SQL Server | Thành viên khác có thể chạy theo README; có chức năng thử gọi SP | Đã làm |
+| BE-02 | Đăng ký, đăng nhập, phiên đăng nhập và phân quyền | Mật khẩu được băm bằng thư viện ở backend; chặn khách truy cập chức năng admin | Đã làm |
+| BE-03 | Hồ sơ khách hàng và tìm chuyến | Gọi đúng SP, trả dữ liệu và lỗi để frontend hiển thị | Đã làm |
+| BE-04 | Đặt vé, thanh toán mô phỏng, PNR và lịch sử | Nhận thông tin hành khách, gọi SP, trả mã đơn/PNR và trạng thái xử lý | Đã làm |
+| BE-05 | Check-in và thẻ lên máy bay | Gọi SP, kiểm tra quyền truy cập đặt chỗ, trả ghế và thông tin thẻ | Đã làm |
+| BE-06 | Quản trị và thống kê | Nối chức năng quản lý chuyến, trạng thái, đơn, khách hàng và báo cáo bán vé | Đã làm |
+| BE-07 | Ghép bản cuối, hướng dẫn chạy | Chạy được luồng demo từ đầu trên máy thành viên khác | Đã làm |
 
 ### Quân - SQL
 

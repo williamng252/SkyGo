@@ -1,0 +1,956 @@
+<!DOCTYPE html>
+<html lang="vi">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SkyGo - Đặt Vé Máy Bay Trực Tuyến</title>
+  <meta name="description"
+    content="SkyGo – Tìm kiếm và đặt vé máy bay nhanh chóng, giá tốt nhất. Check-in trực tuyến, tra cứu PNR và nhiều dịch vụ tiện ích.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap"
+    rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+
+<body>
+
+  <!-- ===== TOAST NOTIFICATIONS ===== -->
+  <div id="toast-container" aria-live="polite"></div>
+
+  <!-- ===== HEADER / NAVIGATION ===== -->
+  <header class="navbar" id="main-navbar">
+    <div class="container nav-container">
+      <a href="#" class="logo" id="logo-home-link">
+        <i class="fa-solid fa-plane-departure"></i> SkyGo
+      </a>
+
+      <button class="hamburger" id="hamburger-btn" aria-label="Toggle menu">
+        <span></span><span></span><span></span>
+      </button>
+
+      <nav class="nav-links" id="main-nav">
+        <a href="#search-section" class="nav-link active" id="nav-booking" data-view="client">
+          <i class="fa-solid fa-ticket"></i> Đặt vé
+        </a>
+        <a href="#pnr-section" class="nav-link" id="nav-pnr" data-view="client">
+          <i class="fa-solid fa-magnifying-glass"></i> Tra cứu PNR
+        </a>
+        <a href="#checkin-section" class="nav-link" id="nav-checkin" data-view="client">
+          <i class="fa-solid fa-circle-check"></i> Check-in Online
+        </a>
+        <a href="#" class="nav-link" id="nav-admin" data-view="admin">
+          <i class="fa-solid fa-gauge-high"></i> Quản trị
+        </a>
+      </nav>
+
+      <div class="auth-buttons" id="auth-buttons-guest">
+        <button class="btn btn-outline" id="btn-login-modal">
+          <i class="fa-solid fa-right-to-bracket"></i> Đăng nhập
+        </button>
+        <button class="btn btn-primary" id="btn-register-modal">
+          <i class="fa-solid fa-user-plus"></i> Đăng ký
+        </button>
+      </div>
+
+      <div class="auth-buttons hidden" id="auth-buttons-user">
+        <div class="user-menu" id="user-menu-container">
+          <button class="user-avatar-btn" id="user-avatar-btn">
+            <span class="user-avatar-icon"><i class="fa-solid fa-circle-user"></i></span>
+            <span id="user-display-name">Khách</span>
+            <i class="fa-solid fa-chevron-down"></i>
+          </button>
+          <div class="user-dropdown" id="user-dropdown">
+            <a href="#" id="user-profile-link"><i class="fa-solid fa-id-card"></i> Hồ sơ</a>
+            <a href="#" id="user-bookings-link"><i class="fa-solid fa-suitcase"></i> Đặt chỗ của tôi</a>
+            <hr>
+            <a href="#" id="btn-logout"><i class="fa-solid fa-right-from-bracket"></i> Đăng xuất</a>
+          </div>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <!-- ===== MAIN CLIENT VIEW ===== -->
+  <main id="client-view">
+    <div class="container">
+
+      <!-- Hero & Search Section -->
+      <section id="search-section" class="hero-section">
+        <div class="hero-text">
+          <h1>Bay Cùng SkyGo - Khám Phá Thế Giới</h1>
+          <p>Tìm kiếm và đặt vé máy bay với giá tốt nhất chỉ trong vài bước</p>
+        </div>
+
+        <div class="search-card">
+          <div class="trip-type">
+            <label class="radio-label">
+              <input type="radio" name="trip" value="roundtrip" checked> Khứ hồi
+            </label>
+            <label class="radio-label">
+              <input type="radio" name="trip" value="oneway"> Một chiều
+            </label>
+          </div>
+
+          <form id="flight-search-form" class="search-form">
+            <div class="form-group">
+              <label><i class="fa-solid fa-plane-departure"></i> Điểm đi</label>
+              <select id="origin" required>
+                <option value="">Chọn điểm đi</option>
+                <option value="SGN">Hồ Chí Minh (SGN)</option>
+                <option value="HAN">Hà Nội (HAN)</option>
+                <option value="DAD">Đà Nẵng (DAD)</option>
+                <option value="PQC">Phú Quốc (PQC)</option>
+                <option value="CXR">Nha Trang (CXR)</option>
+              </select>
+            </div>
+
+            <div class="form-group">
+              <label><i class="fa-solid fa-plane-arrival"></i> Điểm đến</label>
+              <select id="destination" required>
+                <option value="">Chọn điểm đến</option>
+                <option value="HAN">Hà Nội (HAN)</option>
+                <option value="SGN">Hồ Chí Minh (SGN)</option>
+                <option value="DAD">Đà Nẵng (DAD)</option>
+                <option value="PQC">Phú Quốc (PQC)</option>
+                <option value="CXR">Nha Trang (CXR)</option>
+              </select>
+            </div>
+
+            <div class="form-group">
+              <label><i class="fa-regular fa-calendar-days"></i> Ngày đi</label>
+              <input type="date" id="depart-date" required>
+            </div>
+
+            <div class="form-group" id="return-date-group">
+              <label><i class="fa-regular fa-calendar-days"></i> Ngày về</label>
+              <input type="date" id="return-date">
+            </div>
+
+            <div class="form-group passenger-dropdown-container">
+              <label><i class="fa-solid fa-users"></i> Hành khách</label>
+              <div class="passenger-selector" id="passenger-selector">
+                <span id="passenger-summary">1 Người lớn</span>
+                <i class="fa-solid fa-chevron-down"></i>
+              </div>
+              <div class="passenger-popover" id="passenger-popover">
+                <div class="passenger-row">
+                  <div>
+                    <div class="p-title">Người lớn</div>
+                    <div class="p-desc">Từ 12 tuổi trở lên</div>
+                  </div>
+                  <div class="counter-control">
+                    <button type="button" class="btn-counter" data-action="decrease" data-type="adults">&#8722;</button>
+                    <span id="count-adults">1</span>
+                    <button type="button" class="btn-counter" data-action="increase" data-type="adults">+</button>
+                  </div>
+                </div>
+                <div class="passenger-row">
+                  <div>
+                    <div class="p-title">Trẻ em</div>
+                    <div class="p-desc">Từ 2 đến dưới 12 tuổi</div>
+                  </div>
+                  <div class="counter-control">
+                    <button type="button" class="btn-counter" data-action="decrease"
+                      data-type="children">&#8722;</button>
+                    <span id="count-children">0</span>
+                    <button type="button" class="btn-counter" data-action="increase" data-type="children">+</button>
+                  </div>
+                </div>
+                <div class="passenger-row">
+                  <div>
+                    <div class="p-title">Em bé</div>
+                    <div class="p-desc">Dưới 2 tuổi</div>
+                  </div>
+                  <div class="counter-control">
+                    <button type="button" class="btn-counter" data-action="decrease"
+                      data-type="infants">&#8722;</button>
+                    <span id="count-infants">0</span>
+                    <button type="button" class="btn-counter" data-action="increase" data-type="infants">+</button>
+                  </div>
+                </div>
+                <button type="button" class="btn btn-primary btn-sm btn-block" id="btn-close-passengers">Xác
+                  nhận</button>
+              </div>
+            </div>
+
+            <div class="form-group btn-search-container">
+              <button type="submit" class="btn btn-primary btn-search" id="btn-search-flights">
+                <i class="fa-solid fa-magnifying-glass"></i> Tìm chuyến bay
+              </button>
+            </div>
+          </form>
+        </div>
+      </section>
+
+      <!-- Dynamic Results Section -->
+      <section id="results-section" class="results-section hidden">
+        <div class="results-header">
+          <h2><i class="fa-solid fa-list"></i> Kết Quả Tìm Kiếm</h2>
+          <span id="results-count" class="results-count"></span>
+        </div>
+        <div id="flight-results-list" class="results-list"></div>
+      </section>
+
+      <!-- PNR Lookup Section -->
+      <section id="pnr-section" class="card-section">
+        <div class="section-header">
+          <div class="section-icon"><i class="fa-solid fa-ticket"></i></div>
+          <div>
+            <h2>Tra Cứu Mã Đặt Chỗ (PNR)</h2>
+            <p class="section-subtitle">Nhập mã PNR và họ hành khách để xem thông tin đặt chỗ</p>
+          </div>
+        </div>
+
+        <form id="pnr-form" class="inline-form">
+          <div class="input-icon-wrap">
+            <i class="fa-solid fa-hashtag input-icon"></i>
+            <input type="text" id="pnr-code-input" placeholder="Mã PNR (VD: SG1234)" required maxlength="10">
+          </div>
+          <div class="input-icon-wrap">
+            <i class="fa-solid fa-user input-icon"></i>
+            <input type="text" id="pnr-lastname-input" placeholder="Họ hành khách (VD: NGUYEN)" required>
+          </div>
+          <button type="submit" class="btn btn-primary" id="btn-pnr-search">
+            <i class="fa-solid fa-search"></i> Tra cứu
+          </button>
+        </form>
+
+        <div id="pnr-result-display" class="result-display hidden"></div>
+      </section>
+
+      <!-- Check-in Online Section -->
+      <section id="checkin-section" class="card-section">
+        <div class="section-header">
+          <div class="section-icon accent"><i class="fa-solid fa-plane-circle-check"></i></div>
+          <div>
+            <h2>Làm Thủ Tục Trực Tuyến (Check-in)</h2>
+            <p class="section-subtitle">Check-in online từ 24 giờ trước giờ khởi hành</p>
+          </div>
+        </div>
+
+        <form id="checkin-form" class="inline-form">
+          <div class="input-icon-wrap">
+            <i class="fa-solid fa-hashtag input-icon"></i>
+            <input type="text" id="checkin-pnr-input" placeholder="Nhập mã PNR" required>
+          </div>
+          <div class="input-icon-wrap">
+            <i class="fa-solid fa-user input-icon"></i>
+            <input type="text" id="checkin-lastname-input" placeholder="Họ hành khách" required>
+          </div>
+          <button type="submit" class="btn btn-accent" id="btn-checkin-submit">
+            <i class="fa-solid fa-circle-check"></i> Thực hiện Check-in
+          </button>
+        </form>
+
+        <div id="checkin-result-display" class="result-display hidden"></div>
+      </section>
+
+    </div><!-- /.container -->
+  </main>
+
+  <!-- ===== ADMIN DASHBOARD VIEW ===== -->
+  <main id="admin-view" class="hidden">
+    <div class="container">
+      <div class="admin-header">
+        <div>
+          <h1 class="admin-title"><i class="fa-solid fa-gauge-high"></i> Bảng Điều Khiển Admin</h1>
+          <p class="admin-subtitle">Quản lý chuyến bay và theo dõi hoạt động hôm nay</p>
+        </div>
+        <button class="btn btn-primary" id="btn-add-flight">
+          <i class="fa-solid fa-plus"></i> Thêm Chuyến Bay
+        </button>
+      </div>
+
+      <!-- Metrics Cards -->
+      <div class="metrics-grid">
+        <div class="metric-card">
+          <div class="metric-icon blue">
+            <i class="fa-solid fa-ticket"></i>
+          </div>
+          <div class="metric-info">
+            <div class="metric-label">Đặt chỗ hôm nay</div>
+            <div class="metric-value" id="metric-bookings">247</div>
+            <div class="metric-change positive"><i class="fa-solid fa-arrow-trend-up"></i> +12% so với hôm qua</div>
+          </div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-icon green">
+            <i class="fa-solid fa-sack-dollar"></i>
+          </div>
+          <div class="metric-info">
+            <div class="metric-label">Doanh thu</div>
+            <div class="metric-value" id="metric-revenue">348,5M</div>
+            <div class="metric-change positive"><i class="fa-solid fa-arrow-trend-up"></i> +8% so với hôm qua</div>
+          </div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-icon purple">
+            <i class="fa-solid fa-chair"></i>
+          </div>
+          <div class="metric-info">
+            <div class="metric-label">Tỷ lệ lấp ghế</div>
+            <div class="metric-value" id="metric-occupancy">78.4%</div>
+            <div class="metric-change negative"><i class="fa-solid fa-arrow-trend-down"></i> -2% so với hôm qua</div>
+          </div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-icon orange">
+            <i class="fa-solid fa-plane"></i>
+          </div>
+          <div class="metric-info">
+            <div class="metric-label">Chuyến bay hôm nay</div>
+            <div class="metric-value" id="metric-flights">14</div>
+            <div class="metric-change neutral"><i class="fa-solid fa-minus"></i> Bằng hôm qua</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Flight Management Table -->
+      <div class="admin-table-card">
+        <div class="admin-table-header">
+          <h3><i class="fa-solid fa-table-list"></i> Danh Sách Chuyến Bay Hôm Nay</h3>
+          <div class="table-actions">
+            <input type="text" class="table-search" id="admin-flight-search" placeholder="Tìm chuyến bay...">
+            <select class="table-filter" id="admin-status-filter">
+              <option value="">Tất cả trạng thái</option>
+              <option value="selling">Đang bán</option>
+              <option value="checkin">Check-in</option>
+              <option value="boarding">Boarding</option>
+              <option value="departed">Đã bay</option>
+            </select>
+          </div>
+        </div>
+        <div class="table-responsive">
+          <table class="admin-table" id="admin-flights-table">
+            <thead>
+              <tr>
+                <th>Số Hiệu</th>
+                <th>Lộ Trình</th>
+                <th>Giờ Khởi Hành</th>
+                <th>Ghế Đã Đặt</th>
+                <th>Trạng Thái</th>
+                <th>Hành Động</th>
+              </tr>
+            </thead>
+            <tbody id="admin-flights-tbody">
+              <!-- Rendered by JS -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+    </div><!-- /.container -->
+  </main>
+
+  <!-- ===== FOOTER ===== -->
+  <footer class="site-footer">
+    <div class="container footer-container">
+      <div class="footer-brand">
+        <a href="#" class="logo footer-logo"><i class="fa-solid fa-plane-departure"></i> SkyGo</a>
+        <p>Hãng hàng không nội địa uy tín, phục vụ hàng triệu hành khách mỗi năm.</p>
+      </div>
+      <div class="footer-links">
+        <h4>Dịch vụ</h4>
+        <a href="#">Đặt vé</a>
+        <a href="#">Check-in Online</a>
+        <a href="#">Tra cứu PNR</a>
+      </div>
+      <div class="footer-links">
+        <h4>Hỗ trợ</h4>
+        <a href="#">Câu hỏi thường gặp</a>
+        <a href="#">Chính sách hoàn vé</a>
+        <a href="#">Liên hệ</a>
+      </div>
+    </div>
+    <div class="footer-bottom">
+      <p>2026 SkyGo Airlines. All rights reserved.</p>
+    </div>
+  </footer>
+
+
+  <!-- ================================================================
+       MODALS
+       ================================================================ -->
+
+  <!-- Modal: Dang Nhap -->
+  <div class="modal" id="modal-login" role="dialog" aria-modal="true" aria-labelledby="login-modal-title">
+    <div class="modal-content">
+      <button class="modal-close" id="close-login" aria-label="Đóng">&times;</button>
+      <div class="modal-brand">
+        <i class="fa-solid fa-plane-departure"></i>
+        <h3 id="login-modal-title">Đăng Nhập SkyGo</h3>
+      </div>
+      <form id="login-form" novalidate>
+        <div class="form-group">
+          <label for="login-email">Email</label>
+          <div class="input-icon-wrap">
+            <i class="fa-solid fa-envelope input-icon"></i>
+            <input type="email" id="login-email" required placeholder="email@skygo.com" autocomplete="email">
+          </div>
+        </div>
+        <div class="form-group">
+          <label for="login-password">Mật khẩu</label>
+          <div class="input-icon-wrap">
+            <i class="fa-solid fa-lock input-icon"></i>
+            <input type="password" id="login-password" required placeholder="Nhập mật khẩu"
+              autocomplete="current-password">
+            <button type="button" class="toggle-password" data-target="login-password" aria-label="Hiện/ẩn mật khẩu">
+              <i class="fa-solid fa-eye"></i>
+            </button>
+          </div>
+        </div>
+        <div class="form-row-space">
+          <label class="checkbox-label">
+            <input type="checkbox" id="login-remember"> Ghi nhớ đăng nhập
+          </label>
+          <a href="#" class="link-muted">Quên mật khẩu?</a>
+        </div>
+        <button type="submit" class="btn btn-primary btn-block btn-lg" id="btn-login-submit">
+          <i class="fa-solid fa-right-to-bracket"></i> Đăng Nhập
+        </button>
+        <p class="modal-switch-text">
+          Chưa có tài khoản? <a href="#" id="switch-to-register">Đăng ký ngay</a>
+        </p>
+      </form>
+    </div>
+  </div>
+
+  <!-- Modal: Dang Ky -->
+  <div class="modal" id="modal-register" role="dialog" aria-modal="true" aria-labelledby="register-modal-title">
+    <div class="modal-content">
+      <button class="modal-close" id="close-register" aria-label="Đóng">&times;</button>
+      <div class="modal-brand">
+        <i class="fa-solid fa-plane-departure"></i>
+        <h3 id="register-modal-title">Đăng Ký Tài Khoản SkyGo</h3>
+      </div>
+      <form id="register-form" novalidate>
+        <div class="form-group">
+          <label for="reg-fullname">Họ và tên</label>
+          <div class="input-icon-wrap">
+            <i class="fa-solid fa-user input-icon"></i>
+            <input type="text" id="reg-fullname" required placeholder="Nguyễn Văn A">
+          </div>
+        </div>
+        <div class="form-group">
+          <label for="reg-email">Email</label>
+          <div class="input-icon-wrap">
+            <i class="fa-solid fa-envelope input-icon"></i>
+            <input type="email" id="reg-email" required placeholder="example@skygo.com">
+          </div>
+        </div>
+        <div class="form-group">
+          <label for="reg-phone">Số điện thoại</label>
+          <div class="input-icon-wrap">
+            <i class="fa-solid fa-phone input-icon"></i>
+            <input type="tel" id="reg-phone" placeholder="0901 234 567">
+          </div>
+        </div>
+        <div class="form-group">
+          <label for="reg-password">Mật khẩu</label>
+          <div class="input-icon-wrap">
+            <i class="fa-solid fa-lock input-icon"></i>
+            <input type="password" id="reg-password" required placeholder="Tối thiểu 6 ký tự">
+            <button type="button" class="toggle-password" data-target="reg-password" aria-label="Hiện/ẩn mật khẩu">
+              <i class="fa-solid fa-eye"></i>
+            </button>
+          </div>
+        </div>
+        <div class="form-group">
+          <label for="reg-confirm-password">Xác nhận mật khẩu</label>
+          <div class="input-icon-wrap">
+            <i class="fa-solid fa-lock-open input-icon"></i>
+            <input type="password" id="reg-confirm-password" required placeholder="Nhập lại mật khẩu">
+            <button type="button" class="toggle-password" data-target="reg-confirm-password"
+              aria-label="Hiện/ẩn mật khẩu">
+              <i class="fa-solid fa-eye"></i>
+            </button>
+          </div>
+        </div>
+        <button type="submit" class="btn btn-primary btn-block btn-lg">
+          <i class="fa-solid fa-user-plus"></i> Tạo Tài Khoản
+        </button>
+        <p class="modal-switch-text">
+          Đã có tài khoản? <a href="#" id="switch-to-login">Đăng nhập</a>
+        </p>
+      </form>
+    </div>
+  </div>
+
+  <!-- Modal: Booking Stepper (4 Steps) -->
+  <div class="modal modal-lg" id="bookingModal" role="dialog" aria-modal="true" aria-labelledby="booking-modal-title">
+    <div class="modal-content modal-content-lg">
+      <button class="modal-close" id="close-booking" aria-label="Đóng">&times;</button>
+      <div class="booking-modal-header">
+        <h3 id="booking-modal-title"><i class="fa-solid fa-ticket"></i> Đặt Vé Máy Bay</h3>
+        <div class="booking-flight-summary" id="booking-flight-summary"></div>
+      </div>
+
+      <!-- Stepper Progress -->
+      <div class="stepper" id="booking-stepper">
+        <div class="step active" data-step="1">
+          <div class="step-circle">1</div>
+          <div class="step-label">Thông Tin</div>
+        </div>
+        <div class="step-line"></div>
+        <div class="step" data-step="2">
+          <div class="step-circle">2</div>
+          <div class="step-label">Ghế &amp; Dịch Vụ</div>
+        </div>
+        <div class="step-line"></div>
+        <div class="step" data-step="3">
+          <div class="step-circle">3</div>
+          <div class="step-label">Thanh Toán</div>
+        </div>
+        <div class="step-line"></div>
+        <div class="step" data-step="4">
+          <div class="step-circle"><i class="fa-solid fa-check"></i></div>
+          <div class="step-label">Xác Nhận</div>
+        </div>
+      </div>
+
+      <!-- Step Panels -->
+      <div class="step-panels">
+
+        <!-- Step 1: Passenger Info -->
+        <div class="step-panel active" id="step-panel-1">
+          <h4 class="step-title"><i class="fa-solid fa-users"></i> Thông Tin Hành Khách</h4>
+          <div id="passenger-forms-container"></div>
+          <div class="step-nav">
+            <span></span>
+            <button class="btn btn-primary" id="step1-next">
+              Tiếp theo <i class="fa-solid fa-arrow-right"></i>
+            </button>
+          </div>
+        </div>
+
+        <!-- Step 2: Seat & Extras -->
+        <div class="step-panel" id="step-panel-2">
+          <h4 class="step-title"><i class="fa-solid fa-chair"></i> Chọn Ghế &amp; Dịch Vụ Thêm</h4>
+
+          <div class="seat-map-wrapper">
+            <div class="seat-legend">
+              <span class="legend-item"><span class="seat-demo available"></span> Trống</span>
+              <span class="legend-item"><span class="seat-demo taken"></span> Đã đặt</span>
+              <span class="legend-item"><span class="seat-demo selected"></span> Đang chọn</span>
+            </div>
+            <div class="aircraft-nose"><i class="fa-solid fa-plane"></i></div>
+            <div class="seat-map" id="seat-map"></div>
+          </div>
+
+          <div class="extras-section">
+            <h5 class="extras-title"><i class="fa-solid fa-bag-shopping"></i> Dịch Vụ Bổ Sung</h5>
+            <div class="extras-grid">
+              <label class="extra-card" id="extra-baggage-label">
+                <input type="checkbox" id="extra-baggage" data-price="250000">
+                <div class="extra-icon"><i class="fa-solid fa-suitcase-rolling"></i></div>
+                <div class="extra-info">
+                  <strong>Hành lý 20kg</strong>
+                  <span>+250.000 VND / khách</span>
+                </div>
+              </label>
+              <label class="extra-card" id="extra-meal-label">
+                <input type="checkbox" id="extra-meal" data-price="150000">
+                <div class="extra-icon"><i class="fa-solid fa-utensils"></i></div>
+                <div class="extra-info">
+                  <strong>Bữa ăn trên máy bay</strong>
+                  <span>+150.000 VND / khách</span>
+                </div>
+              </label>
+              <label class="extra-card" id="extra-priority-label">
+                <input type="checkbox" id="extra-priority" data-price="100000">
+                <div class="extra-icon"><i class="fa-solid fa-star"></i></div>
+                <div class="extra-info">
+                  <strong>Ưu tiên làm thủ tục</strong>
+                  <span>+100.000 VND / khách</span>
+                </div>
+              </label>
+            </div>
+          </div>
+
+          <div class="step-nav">
+            <button class="btn btn-outline" id="step2-back">
+              <i class="fa-solid fa-arrow-left"></i> Quay lại
+            </button>
+            <button class="btn btn-primary" id="step2-next">
+              Tiếp theo <i class="fa-solid fa-arrow-right"></i>
+            </button>
+          </div>
+        </div>
+
+        <!-- Step 3: Payment & Summary -->
+        <div class="step-panel" id="step-panel-3">
+          <h4 class="step-title"><i class="fa-solid fa-credit-card"></i> Thanh Toán &amp; Tóm Tắt</h4>
+
+          <div class="payment-layout">
+            <div>
+              <div class="fare-summary" id="fare-summary"></div>
+              <div class="voucher-box"
+                style="margin-top:16px;background:#f8fafc;padding:16px;border-radius:12px;border:1px dashed #cbd5e1;">
+                <label for="voucher-input"
+                  style="font-weight:600;font-size:13px;display:flex;align-items:center;gap:6px;margin-bottom:8px;">
+                  <i class="fa-solid fa-tag" style="color:var(--primary);"></i> Mã Giảm Giá / Voucher
+                </label>
+                <div style="display:flex;gap:8px;">
+                  <input type="text" id="voucher-input" placeholder="VD: SKYGO10, BAYNGAY"
+                    style="flex:1;text-transform:uppercase;padding:8px 12px;border:1px solid #cbd5e1;border-radius:8px;font-weight:600;">
+                  <button type="button" class="btn btn-outline btn-sm" id="btn-apply-voucher"
+                    style="white-space:nowrap;">Áp dụng</button>
+                </div>
+                <div id="voucher-message" style="font-size:12px;margin-top:6px;"></div>
+              </div>
+            </div>
+
+            <div class="payment-methods">
+              <h5>Phương thức thanh toán</h5>
+              <div class="payment-options">
+                <label class="payment-option">
+                  <input type="radio" name="payment" value="vietqr" checked>
+                  <div class="payment-body">
+                    <img src="https://img.icons8.com/color/48/qr-code.png" alt="VietQR" class="payment-logo">
+                    <span>VietQR / Banking App</span>
+                  </div>
+                </label>
+                <label class="payment-option">
+                  <input type="radio" name="payment" value="domestic">
+                  <div class="payment-body">
+                    <img src="https://img.icons8.com/color/48/bank-card-back-side.png" alt="ATM" class="payment-logo">
+                    <span>Thẻ ATM Nội Địa</span>
+                  </div>
+                </label>
+                <label class="payment-option">
+                  <input type="radio" name="payment" value="visa">
+                  <div class="payment-body">
+                    <img src="https://img.icons8.com/color/48/visa.png" alt="Visa" class="payment-logo">
+                    <span>Visa / Mastercard</span>
+                  </div>
+                </label>
+              </div>
+
+              <div id="payment-vietqr" class="payment-detail-panel">
+                <div class="qr-mock">
+                  <div class="qr-grid" id="payment-qr-grid"></div>
+                  <p class="qr-hint">Quét mã QR bằng ứng dụng ngân hàng để thanh toán</p>
+                </div>
+              </div>
+              <div id="payment-domestic" class="payment-detail-panel hidden">
+                <div class="form-group"><label>Số thẻ</label><input type="text" placeholder="0000 0000 0000 0000"
+                    maxlength="19"></div>
+                <div class="form-row-2col">
+                  <div class="form-group"><label>Ngày hết hạn</label><input type="text" placeholder="MM/YY"
+                      maxlength="5"></div>
+                  <div class="form-group"><label>CVV</label><input type="text" placeholder="***" maxlength="3"></div>
+                </div>
+              </div>
+              <div id="payment-visa" class="payment-detail-panel hidden">
+                <div class="form-group"><label>Số thẻ</label><input type="text" placeholder="0000 0000 0000 0000"
+                    maxlength="19"></div>
+                <div class="form-group"><label>Tên chủ thẻ</label><input type="text" placeholder="NGUYEN VAN A"></div>
+                <div class="form-row-2col">
+                  <div class="form-group"><label>Ngày hết hạn</label><input type="text" placeholder="MM/YY"
+                      maxlength="5"></div>
+                  <div class="form-group"><label>CVV</label><input type="text" placeholder="***" maxlength="3"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="step-nav">
+            <button class="btn btn-outline" id="step3-back">
+              <i class="fa-solid fa-arrow-left"></i> Quay lại
+            </button>
+            <button class="btn btn-accent btn-lg" id="step3-pay">
+              <i class="fa-solid fa-lock"></i> Xác Nhận Thanh Toán
+            </button>
+          </div>
+        </div>
+
+        <!-- Step 4: Confirmation & Boarding Pass -->
+        <div class="step-panel" id="step-panel-4">
+          <div class="confirmation-header">
+            <div class="success-icon-anim">
+              <i class="fa-solid fa-circle-check"></i>
+            </div>
+            <h4>Đặt Vé Thành Công!</h4>
+            <p>Vé của bạn đã được xác nhận. Thẻ lên máy bay (Boarding pass) bên dưới.</p>
+          </div>
+          <div class="boarding-pass" id="boarding-pass">
+            <!-- Rendered by JS -->
+          </div>
+          <div class="step-nav boarding-actions">
+            <button class="btn btn-outline" id="btn-print-boarding">
+              <i class="fa-solid fa-print"></i> In Vé
+            </button>
+            <button class="btn btn-primary" id="btn-close-booking-done">
+              <i class="fa-solid fa-house"></i> Về Trang Chủ
+            </button>
+          </div>
+        </div>
+
+      </div><!-- /.step-panels -->
+    </div><!-- /.modal-content-lg -->
+  </div><!-- /#bookingModal -->
+
+  <!-- Modal: Add Flight (Admin) -->
+  <div class="modal" id="modal-add-flight" role="dialog" aria-modal="true" aria-labelledby="add-flight-modal-title">
+    <div class="modal-content">
+      <button class="modal-close" id="close-add-flight" aria-label="Đóng">&times;</button>
+      <div class="modal-brand">
+        <i class="fa-solid fa-plane-circle-plus"></i>
+        <h3 id="add-flight-modal-title">Thêm Chuyến Bay Mới</h3>
+      </div>
+      <form id="add-flight-form" novalidate>
+        <div class="form-row-2col">
+          <div class="form-group">
+            <label>Số Hiệu Chuyến Bay</label>
+            <input type="text" id="af-number" placeholder="VD: SG-201" required>
+          </div>
+          <div class="form-group">
+            <label>Loại Tàu Bay</label>
+            <select id="af-aircraft">
+              <option value="A320">Airbus A320 (150 ghế)</option>
+              <option value="A321">Airbus A321 (180 ghế)</option>
+              <option value="B737">Boeing 737 (162 ghế)</option>
+            </select>
+          </div>
+        </div>
+        <div class="form-row-2col">
+          <div class="form-group">
+            <label>Điểm Đi</label>
+            <select id="af-origin" required>
+              <option value="SGN">Hồ Chí Minh (SGN)</option>
+              <option value="HAN">Hà Nội (HAN)</option>
+              <option value="DAD">Đà Nẵng (DAD)</option>
+              <option value="PQC">Phú Quốc (PQC)</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Điểm Đến</label>
+            <select id="af-destination" required>
+              <option value="HAN">Hà Nội (HAN)</option>
+              <option value="SGN">Hồ Chí Minh (SGN)</option>
+              <option value="DAD">Đà Nẵng (DAD)</option>
+              <option value="PQC">Phú Quốc (PQC)</option>
+            </select>
+          </div>
+        </div>
+        <div class="form-row-2col">
+          <div class="form-group">
+            <label>Ngày Khởi Hành</label>
+            <input type="date" id="af-depart-date" required>
+          </div>
+          <div class="form-group">
+            <label>Giá Vé (VND)</label>
+            <input type="number" id="af-price" placeholder="VD: 1500000" required min="0">
+          </div>
+        </div>
+        <div class="form-row-2col">
+          <div class="form-group">
+            <label>Giờ Khởi Hành</label>
+            <input type="time" id="af-depart-time" required>
+          </div>
+          <div class="form-group">
+            <label>Giờ Đến</label>
+            <input type="time" id="af-arrive-time" required>
+          </div>
+        </div>
+        <div class="form-group">
+          <label>Trạng Thái</label>
+          <select id="af-status">
+            <option value="selling">Đang Bán</option>
+            <option value="checkin">Check-in</option>
+            <option value="boarding">Boarding</option>
+          </select>
+        </div>
+        <button type="submit" class="btn btn-primary btn-block btn-lg">
+          <i class="fa-solid fa-plus"></i> Thêm Chuyến Bay
+        </button>
+      </form>
+    </div>
+  </div>
+
+  <!-- Modal: Thong Bao Chung -->
+  <div class="modal" id="modal-notification" role="dialog" aria-modal="true">
+    <div class="modal-content modal-sm">
+      <button class="modal-close" id="close-notification" aria-label="Đóng">&times;</button>
+      <div class="notification-icon" id="notif-icon"><i class="fa-solid fa-circle-info"></i></div>
+      <h4 id="notif-title">Thông báo</h4>
+      <p id="notif-message">Nội dung thông báo...</p>
+      <button class="btn btn-primary btn-block" id="btn-notif-ok">Đóng</button>
+    </div>
+  </div>
+
+  <!-- Modal: Ho So Ca Nhan -->
+  <div class="modal" id="modal-profile" role="dialog" aria-modal="true" aria-labelledby="profile-modal-title">
+    <div class="modal-content">
+      <button class="modal-close" id="close-profile" aria-label="Đóng">&times;</button>
+      <div class="modal-brand">
+        <i class="fa-solid fa-id-card"></i>
+        <h3 id="profile-modal-title">Hồ Sơ Cá Nhân</h3>
+      </div>
+      <form id="profile-form" novalidate>
+        <div class="form-group">
+          <label for="prof-fullname">Họ và tên</label>
+          <div class="input-icon-wrap">
+            <i class="fa-solid fa-user input-icon"></i>
+            <input type="text" id="prof-fullname" required>
+          </div>
+        </div>
+        <div class="form-group">
+          <label for="prof-email">Email (Không đổi)</label>
+          <div class="input-icon-wrap">
+            <i class="fa-solid fa-envelope input-icon"></i>
+            <input type="email" id="prof-email" readonly style="background:#f1f5f9;cursor:not-allowed;">
+          </div>
+        </div>
+        <div class="form-group">
+          <label for="prof-phone">Số điện thoại</label>
+          <div class="input-icon-wrap">
+            <i class="fa-solid fa-phone input-icon"></i>
+            <input type="tel" id="prof-phone" placeholder="0901 234 567">
+          </div>
+        </div>
+        <hr style="border:none;border-top:1px solid #e2e8f0;margin:16px 0;">
+        <h5 style="margin-bottom:12px;font-size:14px;color:var(--text-muted);"><i class="fa-solid fa-key"></i> Đổi Mật
+          Khẩu (Để trống nếu không đổi)</h5>
+        <div class="form-group">
+          <label for="prof-new-password">Mật khẩu mới</label>
+          <div class="input-icon-wrap">
+            <i class="fa-solid fa-lock input-icon"></i>
+            <input type="password" id="prof-new-password" placeholder="Tối thiểu 6 ký tự">
+          </div>
+        </div>
+        <button type="submit" class="btn btn-primary btn-block btn-lg" id="btn-save-profile">
+          <i class="fa-solid fa-floppy-disk"></i> Cập Nhật Hồ Sơ
+        </button>
+      </form>
+    </div>
+  </div>
+
+  <!-- Modal: Dat Cho Cua Toi -->
+  <div class="modal modal-lg" id="modal-my-bookings" role="dialog" aria-modal="true"
+    aria-labelledby="bookings-modal-title">
+    <div class="modal-content modal-content-lg">
+      <button class="modal-close" id="close-my-bookings" aria-label="Đóng">&times;</button>
+      <div class="modal-brand">
+        <i class="fa-solid fa-suitcase"></i>
+        <h3 id="bookings-modal-title">Đặt Chỗ Của Tôi</h3>
+      </div>
+      <p style="font-size:14px;color:var(--text-muted);margin-bottom:16px;">Danh sách tất cả các mã vé và trạng thái
+        chuyến bay của bạn.</p>
+      <div id="my-bookings-list" class="my-bookings-list">
+        <!-- Rendered by JS -->
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: Edit Flight (Admin) -->
+  <div class="modal" id="modal-edit-flight" role="dialog" aria-modal="true" aria-labelledby="edit-flight-modal-title">
+    <div class="modal-content">
+      <button class="modal-close" id="close-edit-flight" aria-label="Đóng">&times;</button>
+      <div class="modal-brand">
+        <i class="fa-solid fa-pen-to-square"></i>
+        <h3 id="edit-flight-modal-title">Chỉnh Sửa Chuyến Bay</h3>
+      </div>
+      <form id="edit-flight-form" novalidate>
+        <input type="hidden" id="ef-original-number">
+        <div class="form-row-2col">
+          <div class="form-group">
+            <label>Số Hiệu Chuyến Bay</label>
+            <input type="text" id="ef-number" required>
+          </div>
+          <div class="form-group">
+            <label>Loại Tàu Bay</label>
+            <select id="ef-aircraft">
+              <option value="A320">Airbus A320 (150 ghế)</option>
+              <option value="A321">Airbus A321 (180 ghế)</option>
+              <option value="B737">Boeing 737 (162 ghế)</option>
+            </select>
+          </div>
+        </div>
+        <div class="form-row-2col">
+          <div class="form-group">
+            <label>Điểm Đi</label>
+            <select id="ef-origin" required>
+              <option value="SGN">Hồ Chí Minh (SGN)</option>
+              <option value="HAN">Hà Nội (HAN)</option>
+              <option value="DAD">Đà Nẵng (DAD)</option>
+              <option value="PQC">Phú Quốc (PQC)</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Điểm Đến</label>
+            <select id="ef-destination" required>
+              <option value="HAN">Hà Nội (HAN)</option>
+              <option value="SGN">Hồ Chí Minh (SGN)</option>
+              <option value="DAD">Đà Nẵng (DAD)</option>
+              <option value="PQC">Phú Quốc (PQC)</option>
+            </select>
+          </div>
+        </div>
+        <div class="form-row-2col">
+          <div class="form-group">
+            <label>Giờ Khởi Hành</label>
+            <input type="time" id="ef-depart-time" required>
+          </div>
+          <div class="form-group">
+            <label>Giờ Đến</label>
+            <input type="time" id="ef-arrive-time" required>
+          </div>
+        </div>
+        <div class="form-group">
+          <label>Giá Vé (VND)</label>
+          <input type="number" id="ef-price" required min="0">
+        </div>
+        <div class="form-group">
+          <label>Trạng Thái</label>
+          <select id="ef-status">
+            <option value="selling">Đang Bán</option>
+            <option value="checkin">Check-in</option>
+            <option value="boarding">Boarding</option>
+            <option value="departed">Đã Bay</option>
+          </select>
+        </div>
+        <button type="submit" class="btn btn-primary btn-block btn-lg">
+          <i class="fa-solid fa-check"></i> Lưu Thay Đổi
+        </button>
+      </form>
+    </div>
+  </div>
+
+  <!-- Modal: Checkin Seat Selection -->
+  <div class="modal modal-lg" id="modal-checkin-seatmap" role="dialog" aria-modal="true"
+    aria-labelledby="checkin-seatmap-title">
+    <div class="modal-content modal-content-lg">
+      <button class="modal-close" id="close-checkin-seatmap" aria-label="Đóng">&times;</button>
+      <div class="modal-brand">
+        <i class="fa-solid fa-chair"></i>
+        <h3 id="checkin-seatmap-title">Làm Thủ Tục: Chọn Ghế Ngồi</h3>
+      </div>
+      <div id="checkin-seatmap-summary"
+        style="margin-bottom:16px;padding:12px;background:#f8fafc;border-radius:10px;font-size:14px;color:var(--text-muted);">
+      </div>
+      <div class="seat-map-wrapper">
+        <div class="seat-legend">
+          <span class="legend-item"><span class="seat-demo available"></span> Trống</span>
+          <span class="legend-item"><span class="seat-demo taken"></span> Đã đặt</span>
+          <span class="legend-item"><span class="seat-demo selected"></span> Ghế chọn</span>
+        </div>
+        <div class="aircraft-nose"><i class="fa-solid fa-plane"></i></div>
+        <div class="seat-map" id="checkin-seat-map"></div>
+      </div>
+      <div style="margin-top:20px;display:flex;justify-content:flex-end;gap:12px;">
+        <button type="button" class="btn btn-outline" id="btn-cancel-checkin-seat">Hủy</button>
+        <button type="button" class="btn btn-accent" id="btn-confirm-checkin-seat">
+          <i class="fa-solid fa-circle-check"></i> Hoàn Tất Check-in &amp; Xuất Thẻ
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+
+</html>
