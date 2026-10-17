@@ -146,7 +146,8 @@ BEGIN
         SELECT @MaDonDatVe = MaDonDatVe, @TrangThai = TrangThai, @Khach = MaKhachHang
         FROM dbo.DON_DAT_VE WHERE MaPNR = UPPER(LTRIM(RTRIM(@MaPNR)));
         IF @MaDonDatVe IS NULL THROW 50004, N'Don dat ve khong ton tai.', 1;
-        IF @MaKhachHang IS NOT NULL AND (@Khach IS NULL OR @Khach <> @MaKhachHang)
+        IF @MaKhachHang IS NULL THROW 50020, N'Chi tai khoan khach hang moi duoc huy don.', 1;
+        IF @Khach IS NULL OR @Khach <> @MaKhachHang
             THROW 50020, N'Tai khoan khong so huu don dat ve nay.', 1;
         IF @TrangThai NOT IN ('PENDING','PAID')
             THROW 50015, N'Don dat ve da duoc xu ly hoac da huy truoc do.', 1;
