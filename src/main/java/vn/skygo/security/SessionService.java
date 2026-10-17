@@ -20,6 +20,7 @@ public class SessionService {
         return token;
     }
     public Optional<Principal> optional(HttpServletRequest request) {
+        if (request == null) return Optional.empty();
         String value = request.getHeader("Authorization");
         if (value == null || !value.startsWith("Bearer ")) return Optional.empty();
         Session session = sessions.get(value.substring(7));

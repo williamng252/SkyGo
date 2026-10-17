@@ -1,6 +1,7 @@
 package vn.skygo.service;
 
 import jakarta.servlet.http.HttpServletRequest;
+import org.springframework.dao.DataAccessException;
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -9,40 +10,144 @@ import org.springframework.transaction.annotation.Transactional;
 import vn.skygo.api.ApiException;
 import vn.skygo.dto.Requests;
 import vn.skygo.security.SessionService;
-import java.sql.Timestamp;
-import java.time.LocalDateTime;
+
 import java.util.*;
 
 @Service
 public class AuthService {
-    private final JdbcTemplate jdbc; private final PasswordEncoder encoder; private final SessionService sessions;
-    public AuthService(JdbcTemplate jdbc, PasswordEncoder encoder, SessionService sessions) { this.jdbc=jdbc; this.encoder=encoder; this.sessions=sessions; }
+    private final JdbcTemplate jdbc;
+    private final PasswordEncoder encoder;
+    private final SessionService sessions;
+
+    public AuthService(JdbcTemplate jdbc, PasswordEncoder encoder, SessionService sessions) {
+        this.jdbc = jdbc;
+        this.encoder = encoder;
+        this.sessions = sessions;
+    }
 
     @Transactional
     public void register(Requests.Register req) {
-        Integer exists = jdbc.queryForObject("SELECT COUNT(*) FROM TAI_KHOAN_ND WHERE Email=?", Integer.class, req.email().trim().toLowerCase());
-        if (exists != null && exists > 0) throw new ApiException(HttpStatus.CONFLICT, "Email này đã được đăng ký.");
-        String username = usernameFor(req.email());
-        int suffix = 1;
-        while (Boolean.TRUE.equals(jdbc.queryForObject("SELECT CASE WHEN EXISTS(SELECT 1 FROM TAI_KHOAN_ND WHERE TenDangNhap=?) THEN 1 ELSE 0 END", Boolean.class, username))) username = usernameFor(req.email()) + (++suffix);
-        Long customerId = jdbc.queryForObject("INSERT INTO KHACH_HANG(HoTen,SDT,Email) OUTPUT INSERTED.MaKhachHang VALUES(?,?,?)", Long.class, req.fullName().trim(), req.phone(), req.email().trim().toLowerCase());
-        jdbc.update("INSERT INTO TAI_KHOAN_ND(TenDangNhap,Email,MatKhauHash,VaiTro,NgayTao,TrangThai,MaKhachHang) VALUES(?,?,?,?,?,?,?)", username, req.email().trim().toLowerCase(), encoder.encode(req.password()), "CUSTOMER", Timestamp.valueOf(LocalDateTime.now()), true, customerId);
+        String email = req.email().trim().toLowerCase();
+        String username = usernameFor(email);
+        String hash = encoder.encode(req.password());
+        try {
+            jdbc.queryForMap(
+                "EXEC dbo.usp_DangKy @TenDangNhap=?, @Email=?, @MatKhauHash=?, @HoTen=?, @SDT=?",
+                username, email, hash, req.fullName().trim(), emptyToNull(req.phone())
+            );
+        } catch (DataAccessException ex) {
+            String msg = ex.getMessage();
+            if (msg != null && (msg.contains("50003") || msg.contains("da ton tai") || msg.contains("UQ_TAIKHOAN"))) {
+                throw new ApiException(HttpStatus.CONFLICT, "Tên đăng nhập hoặc email này đã tồn tại.");
+            }
+            throw new ApiException(HttpStatus.BAD_REQUEST, "Đăng ký thất bại: " + (msg != null && msg.contains(":") ? msg.substring(msg.lastIndexOf(":") + 1).trim() : "Dữ liệu không hợp lệ."));
+        }
     }
-    public Map<String,Object> login(Requests.Login req) {
-        List<Map<String,Object>> rows = jdbc.queryForList("SELECT tk.MaTK,tk.Email,tk.MatKhauHash,tk.VaiTro,tk.TrangThai,tk.MaKhachHang,kh.HoTen,kh.SDT FROM TAI_KHOAN_ND tk LEFT JOIN KHACH_HANG kh ON kh.MaKhachHang=tk.MaKhachHang WHERE tk.Email=?", req.email().trim().toLowerCase());
-        if (rows.isEmpty() || !encoder.matches(req.password(), (String)rows.get(0).get("MatKhauHash"))) throw new ApiException(HttpStatus.UNAUTHORIZED, "Email hoặc mật khẩu không đúng.");
-        Map<String,Object> row=rows.get(0); if (!(Boolean)row.get("TrangThai")) throw new ApiException(HttpStatus.FORBIDDEN,"Tài khoản đã bị khóa.");
-        long accountId=((Number)row.get("MaTK")).longValue(); Long customerId=row.get("MaKhachHang")==null?null:((Number)row.get("MaKhachHang")).longValue(); String role=(String)row.get("VaiTro");
-        String token=sessions.create(new SessionService.Principal(accountId,customerId,(String)row.get("Email"),role));
-        Map<String,Object> result=new LinkedHashMap<>(); result.put("token",token); result.put("email",row.get("Email")); result.put("fullName", row.get("HoTen") == null ? "Quản trị viên" : row.get("HoTen")); result.put("phone",row.get("SDT")); result.put("role",role.equals("ADMIN")?"admin":"user"); return result;
+
+    public Map<String, Object> login(Requests.Login req) {
+        String identifier = req.email().trim().toLowerCase();
+        List<Map<String, Object>> rows = jdbc.queryForList(
+            "EXEC dbo.usp_LayTaiKhoanDangNhap @TenDangNhap=?",
+            identifier
+        );
+
+        if (rows.isEmpty() || !encoder.matches(req.password(), (String) rows.get(0).get("MatKhauHash"))) {
+            throw new ApiException(HttpStatus.UNAUTHORIZED, "Email hoặc mật khẩu không đúng.");
+        }
+
+        Map<String, Object> account = rows.get(0);
+        if (!Boolean.TRUE.equals(account.get("TrangThai"))) {
+            throw new ApiException(HttpStatus.FORBIDDEN, "Tài khoản đã bị khóa.");
+        }
+
+        long accountId = ((Number) account.get("MaTK")).longValue();
+        Long customerId = account.get("MaKhachHang") == null ? null : ((Number) account.get("MaKhachHang")).longValue();
+        String role = (String) account.get("VaiTro");
+        String email = account.get("Email") != null ? (String) account.get("Email") : identifier;
+
+        String fullName = "Quản trị viên";
+        String phone = "";
+
+        if (customerId != null) {
+            List<Map<String, Object>> profiles = jdbc.queryForList(
+                "EXEC dbo.usp_LayHoSoKhachHang @MaKhachHang=?",
+                customerId
+            );
+            if (!profiles.isEmpty()) {
+                Map<String, Object> profile = profiles.get(0);
+                if (profile.get("HoTen") != null) fullName = (String) profile.get("HoTen");
+                if (profile.get("SDT") != null) phone = (String) profile.get("SDT");
+                if (profile.get("Email") != null) email = (String) profile.get("Email");
+            }
+        }
+
+        String token = sessions.create(new SessionService.Principal(accountId, customerId, email, role));
+
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("token", token);
+        result.put("email", email);
+        result.put("fullName", fullName);
+        result.put("phone", phone);
+        result.put("role", "ADMIN".equalsIgnoreCase(role) ? "admin" : "user");
+        return result;
     }
-    public Map<String,Object> me(HttpServletRequest request) { SessionService.Principal p=sessions.requireUser(request); Map<String,Object> row=jdbc.queryForMap("SELECT tk.Email,tk.VaiTro,kh.HoTen,kh.SDT FROM TAI_KHOAN_ND tk LEFT JOIN KHACH_HANG kh ON kh.MaKhachHang=tk.MaKhachHang WHERE tk.MaTK=?",p.accountId()); return Map.of("email",row.get("Email"),"fullName",row.get("HoTen")==null?"Quản trị viên":row.get("HoTen"),"phone",row.get("SDT")==null?"":row.get("SDT"),"role","ADMIN".equals(row.get("VaiTro"))?"admin":"user"); }
+
+    public Map<String, Object> me(HttpServletRequest request) {
+        SessionService.Principal p = sessions.requireUser(request);
+        if (p.customerId() != null) {
+            List<Map<String, Object>> profiles = jdbc.queryForList(
+                "EXEC dbo.usp_LayHoSoKhachHang @MaKhachHang=?",
+                p.customerId()
+            );
+            if (!profiles.isEmpty()) {
+                Map<String, Object> row = profiles.get(0);
+                return Map.of(
+                    "email", row.get("Email") != null ? row.get("Email") : p.email(),
+                    "fullName", row.get("HoTen") != null ? row.get("HoTen") : "",
+                    "phone", row.get("SDT") != null ? row.get("SDT") : "",
+                    "role", "ADMIN".equalsIgnoreCase(p.role()) ? "admin" : "user"
+                );
+            }
+        }
+        return Map.of(
+            "email", p.email(),
+            "fullName", "Quản trị viên",
+            "phone", "",
+            "role", "ADMIN".equalsIgnoreCase(p.role()) ? "admin" : "user"
+        );
+    }
+
     @Transactional
-    public Map<String,Object> updateProfile(HttpServletRequest request, Requests.Profile req) {
-        SessionService.Principal p=sessions.requireUser(request); if (p.customerId()==null) throw new ApiException(HttpStatus.BAD_REQUEST,"Tài khoản quản trị không có hồ sơ khách hàng.");
-        jdbc.update("UPDATE KHACH_HANG SET HoTen=?, SDT=? WHERE MaKhachHang=?",req.fullName().trim(),req.phone(),p.customerId());
-        if(req.newPassword()!=null&&!req.newPassword().isBlank()){if(req.newPassword().length()<6)throw new ApiException(HttpStatus.BAD_REQUEST,"Mật khẩu mới phải có ít nhất 6 ký tự."); jdbc.update("UPDATE TAI_KHOAN_ND SET MatKhauHash=? WHERE MaTK=?",encoder.encode(req.newPassword()),p.accountId());}
+    public Map<String, Object> updateProfile(HttpServletRequest request, Requests.Profile req) {
+        SessionService.Principal p = sessions.requireUser(request);
+        if (p.customerId() == null) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "Tài khoản quản trị không có hồ sơ khách hàng.");
+        }
+
+        jdbc.queryForList(
+            "EXEC dbo.usp_CapNhatHoSoKhachHang @MaKhachHang=?, @HoTen=?, @SDT=?",
+            p.customerId(), req.fullName().trim(), emptyToNull(req.phone())
+        );
+
+        if (req.newPassword() != null && !req.newPassword().isBlank()) {
+            if (req.newPassword().length() < 6) {
+                throw new ApiException(HttpStatus.BAD_REQUEST, "Mật khẩu mới phải có ít nhất 6 ký tự.");
+            }
+            jdbc.update(
+                "EXEC dbo.usp_DoiMatKhau @MaTK=?, @MatKhauHash=?",
+                p.accountId(), encoder.encode(req.newPassword())
+            );
+        }
+
         return me(request);
     }
-    private String usernameFor(String email) { String s=email.substring(0,email.indexOf('@')).replaceAll("[^a-zA-Z0-9_]", "_"); return s.length()<3 ? "user_"+s : s.substring(0,Math.min(45,s.length())); }
+
+    private String usernameFor(String email) {
+        String s = email.substring(0, email.indexOf('@')).replaceAll("[^a-zA-Z0-9_]", "_");
+        return s.length() < 3 ? "user_" + s : s.substring(0, Math.min(45, s.length()));
+    }
+
+    private String emptyToNull(String s) {
+        return (s == null || s.trim().isEmpty()) ? null : s.trim();
+    }
 }

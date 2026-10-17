@@ -1,4 +1,4 @@
-﻿USE SkyGo_Cnpm;
+USE SkyGo_Cnpm;
 GO
 SET ANSI_NULLS ON;
 SET QUOTED_IDENTIFIER ON;
@@ -125,6 +125,51 @@ BEGIN
         COMMIT TRANSACTION;
         SELECT @MaDonDatVe AS MaDonDatVe, @MaPNR AS MaPNR, @TongTien AS TongTien,
                @HanThanhToan AS HanThanhToan, CONVERT(VARCHAR(10),'PENDING') AS TrangThai;
+    END TRY
+    BEGIN CATCH
+        IF @@TRANCOUNT > 0 ROLLBACK TRANSACTION;
+        THROW;
+    END CATCH;
+END;
+GO
+
+-- Huy don dat ve: xu ly hop le check-in, ve va don theo dung trigger va rang buoc
+CREATE OR ALTER PROCEDURE dbo.usp_HuyDonDatVe
+    @MaPNR CHAR(6), @MaKhachHang BIGINT = NULL
+AS
+BEGIN
+    SET NOCOUNT ON; SET XACT_ABORT ON;
+    BEGIN TRY
+        BEGIN TRANSACTION;
+        EXEC dbo.usp_KhoaNghiepVu;
+        DECLARE @MaDonDatVe BIGINT, @TrangThai VARCHAR(10), @Khach BIGINT;
+        SELECT @MaDonDatVe = MaDonDatVe, @TrangThai = TrangThai, @Khach = MaKhachHang
+        FROM dbo.DON_DAT_VE WHERE MaPNR = UPPER(LTRIM(RTRIM(@MaPNR)));
+        IF @MaDonDatVe IS NULL THROW 50004, N'Don dat ve khong ton tai.', 1;
+        IF @MaKhachHang IS NOT NULL AND (@Khach IS NULL OR @Khach <> @MaKhachHang)
+            THROW 50020, N'Tai khoan khong so huu don dat ve nay.', 1;
+        IF @TrangThai NOT IN ('PENDING','PAID')
+            THROW 50015, N'Don dat ve da duoc xu ly hoac da huy truoc do.', 1;
+
+        -- 1. Huy cac luot check-in dang con hieu luc truoc (de thoa man trigger trg_Ve_BaoVe)
+        UPDATE c SET TrangThai = 'CANCELLED'
+        FROM dbo.CHECK_IN c
+        JOIN dbo.VE_CHUYEN_BAY v ON v.MaVe = c.MaVe
+        WHERE v.MaDonDatVe = @MaDonDatVe AND c.TrangThai = 'CHECKED_IN';
+
+        -- 2. Chuyen trang thai cac ve ve CANCELLED
+        UPDATE dbo.VE_CHUYEN_BAY SET TrangThai = 'CANCELLED'
+        WHERE MaDonDatVe = @MaDonDatVe AND TrangThai IN ('RESERVED','ISSUED');
+
+        -- 3. Chuyen trang thai don ve CANCELLED
+        UPDATE dbo.DON_DAT_VE SET TrangThai = 'CANCELLED' WHERE MaDonDatVe = @MaDonDatVe;
+
+        -- 4. Neu co giao dich PENDING thi danh dau FAILED
+        UPDATE dbo.GIAO_DICH_TT SET TrangThaiTT = 'FAILED', ThoiGianTT = SYSUTCDATETIME()
+        WHERE MaDonDatVe = @MaDonDatVe AND TrangThaiTT = 'PENDING';
+
+        COMMIT TRANSACTION;
+        SELECT @MaDonDatVe AS MaDonDatVe, @MaPNR AS MaPNR, CONVERT(VARCHAR(10),'CANCELLED') AS TrangThai;
     END TRY
     BEGIN CATCH
         IF @@TRANCOUNT > 0 ROLLBACK TRANSACTION;

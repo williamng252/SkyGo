@@ -1,11 +1,13 @@
 package vn.skygo.service;
 
+import org.springframework.dao.DataAccessException;
+import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import vn.skygo.api.ApiException;
-import org.springframework.http.HttpStatus;
 import vn.skygo.dto.Requests;
+
 import java.math.BigDecimal;
 import java.sql.Timestamp;
 import java.time.*;
@@ -14,31 +16,52 @@ import java.util.*;
 @Service
 public class FlightService {
     private final JdbcTemplate jdbc;
-    public FlightService(JdbcTemplate jdbc) { this.jdbc = jdbc; }
 
-    public List<Map<String,Object>> search(String origin, String destination, LocalDate date, int passengers) {
-        if (origin.equalsIgnoreCase(destination)) throw new ApiException(HttpStatus.BAD_REQUEST, "Điểm đi và điểm đến phải khác nhau.");
+    public FlightService(JdbcTemplate jdbc) {
+        this.jdbc = jdbc;
+    }
+
+    public List<Map<String, Object>> search(String origin, String destination, LocalDate date, int passengers) {
+        if (origin.equalsIgnoreCase(destination)) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "Điểm đi và điểm đến phải khác nhau.");
+        }
+        if (passengers < 1 || passengers > 9) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "Số hành khách phải từ 1 đến 9.");
+        }
+
         try {
-            return jdbc.query("EXEC dbo.usp_TimChuyenBay @MaSanBayDi=?, @MaSanBayDen=?, @NgayBay=?, @SoHanhKhach=?",
-                    (rs, n) -> flightMap(rs.getString("MaChuyenBay"), rs.getString("SoHieuChuyen"), rs.getString("MaSanBayDi"), rs.getString("MaSanBayDen"), rs.getTimestamp("GioCatCanh").toLocalDateTime(), rs.getTimestamp("GioDenDuKien").toLocalDateTime(), rs.getBigDecimal("GiaTu"), rs.getInt("SoChoCon")),
-                    origin.toUpperCase(), destination.toUpperCase(), java.sql.Date.valueOf(date), passengers);
-        } catch (Exception ex) {
-            String sql = """
-              SELECT cb.MaChuyenBay AS flightCode, cb.SoHieuChuyen AS flightNumber, cb.MaSanBayDi AS origin, cb.MaSanBayDen AS destination,
-                     cb.GioCatCanh AS departure, cb.GioDenDuKien AS arrival, MIN(hv.GiaCoBan+hv.ThuePhi) AS price,
-                     COUNT(DISTINCT g.MaGhe) - COUNT(DISTINCT v.MaVe) AS seatsAvailable
-              FROM CHUYEN_BAY cb JOIN HANG_VE_CHUYEN_BAY hv ON hv.MaChuyenBay=cb.MaChuyenBay AND hv.TrangThai=1
-              JOIN GHE_CHUYEN_BAY g ON g.MaChuyenBay=hv.MaChuyenBay AND g.HangVe=hv.HangVe
-              LEFT JOIN VE_CHUYEN_BAY v ON v.MaChuyenBay=g.MaChuyenBay AND v.HangVe=g.HangVe AND v.TrangThai IN ('RESERVED','ISSUED','USED')
-              WHERE cb.MaSanBayDi=? AND cb.MaSanBayDen=? AND CAST(cb.GioCatCanh AS date)=? AND cb.TrangThai IN ('SCHEDULED','DELAYED')
-              GROUP BY cb.MaChuyenBay,cb.SoHieuChuyen,cb.MaSanBayDi,cb.MaSanBayDen,cb.GioCatCanh,cb.GioDenDuKien
-              HAVING COUNT(DISTINCT g.MaGhe)-COUNT(DISTINCT v.MaVe) >= ? ORDER BY cb.GioCatCanh""";
-            return jdbc.query(sql, (rs, n) -> flightMap(rs.getString("flightCode"), rs.getString("flightNumber"), rs.getString("origin"), rs.getString("destination"), rs.getTimestamp("departure").toLocalDateTime(), rs.getTimestamp("arrival").toLocalDateTime(), rs.getBigDecimal("price"), rs.getInt("seatsAvailable")), origin.toUpperCase(), destination.toUpperCase(), date, passengers);
+            return jdbc.query(
+                "EXEC dbo.usp_TimChuyenBay @MaSanBayDi=?, @MaSanBayDen=?, @NgayDi=?, @SoHanhKhach=?",
+                (rs, n) -> {
+                    String code = rs.getString("MaChuyenBay");
+                    String number = rs.getString("SoHieuChuyen");
+                    String orig = rs.getString("MaSanBayDi");
+                    String dest = rs.getString("MaSanBayDen");
+                    LocalDateTime dep = rs.getTimestamp("GioCatCanh").toLocalDateTime();
+                    LocalDateTime arr = rs.getTimestamp("GioDenDuKien").toLocalDateTime();
+                    BigDecimal price = rs.getBigDecimal("GiaVe");
+                    int seats = rs.getInt("SoChoCon");
+                    String fareClass = rs.getString("HangVe");
+
+                    Map<String, Object> m = flightMap(code, number, orig, dest, dep, arr, price, seats);
+                    m.put("fareClass", fareClass);
+                    return m;
+                },
+                origin.toUpperCase().trim(),
+                destination.toUpperCase().trim(),
+                java.sql.Date.valueOf(date),
+                passengers
+            );
+        } catch (DataAccessException ex) {
+            String msg = ex.getMessage();
+            throw new ApiException(HttpStatus.BAD_REQUEST, "Lỗi tìm chuyến bay: " + (msg != null && msg.contains(":") ? msg.substring(msg.lastIndexOf(":") + 1).trim() : msg));
         }
     }
-    private Map<String,Object> flightMap(String code, String number, String origin, String destination, LocalDateTime dep, LocalDateTime arr, BigDecimal price, int seats) {
-        long mins = Duration.between(dep, arr).toMinutes();
-        LinkedHashMap<String,Object> m = new LinkedHashMap<>();
+
+    private Map<String, Object> flightMap(String code, String number, String origin, String destination,
+                                          LocalDateTime dep, LocalDateTime arr, BigDecimal price, int seats) {
+        long mins = Math.max(0, Duration.between(dep, arr).toMinutes());
+        LinkedHashMap<String, Object> m = new LinkedHashMap<>();
         m.put("flightCode", code == null ? "" : code.trim());
         m.put("flightNumber", number == null ? "" : number.trim());
         m.put("origin", origin == null ? "" : origin.trim());
@@ -48,119 +71,200 @@ public class FlightService {
         m.put("departureTime", dep.toLocalTime().toString().substring(0, 5));
         m.put("arrivalTime", arr.toLocalTime().toString().substring(0, 5));
         m.put("departDate", dep.toLocalDate().toString());
-        m.put("duration", (mins/60)+"h "+(mins%60)+"m");
-        m.put("price", price);
+        m.put("duration", (mins / 60) + "h " + (mins % 60) + "m");
+        m.put("price", price != null ? price : BigDecimal.ZERO);
         m.put("seatsAvailable", Math.max(0, seats));
         m.put("airline", "SkyGo Airways");
         return m;
     }
-    public List<Map<String,Object>> airports() {
-        return jdbc.query("SELECT MaSanBay AS code, TenSanBay AS name, ThanhPho AS city, QuocGia AS country FROM SAN_BAY WHERE TrangThai=1 ORDER BY MaSanBay",
-                (rs,n) -> {
-                    LinkedHashMap<String,Object> m = new LinkedHashMap<>();
-                    String code = rs.getString("code") == null ? "" : rs.getString("code").trim();
-                    String name = rs.getString("name") == null ? "" : rs.getString("name").trim();
-                    String city = rs.getString("city") == null ? "" : rs.getString("city").trim();
-                    String country = rs.getString("country") == null ? "" : rs.getString("country").trim();
-                    m.put("code", code);
-                    m.put("name", name);
-                    m.put("city", city);
-                    m.put("country", country);
-                    m.put("label", city + " (" + code + ")");
-                    return m;
-                });
+
+    public List<Map<String, Object>> airports() {
+        return jdbc.query("EXEC dbo.usp_LayDanhSachSanBay", (rs, n) -> {
+            LinkedHashMap<String, Object> m = new LinkedHashMap<>();
+            String code = rs.getString("MaSanBay") == null ? "" : rs.getString("MaSanBay").trim();
+            String name = rs.getString("TenSanBay") == null ? "" : rs.getString("TenSanBay").trim();
+            String city = rs.getString("ThanhPho") == null ? "" : rs.getString("ThanhPho").trim();
+            String country = rs.getString("QuocGia") == null ? "" : rs.getString("QuocGia").trim();
+            m.put("code", code);
+            m.put("name", name);
+            m.put("city", city);
+            m.put("country", country);
+            m.put("label", city + " (" + code + ")");
+            return m;
+        });
     }
-    public List<Map<String,Object>> adminFlights() {
-        String sql = """
-          SELECT cb.MaChuyenBay,cb.SoHieuChuyen,cb.MaSanBayDi,cb.MaSanBayDen,cb.GioCatCanh,cb.GioDenDuKien,cb.TrangThai,
-                 MIN(hv.GiaCoBan+hv.ThuePhi) AS price, COUNT(DISTINCT g.MaGhe) total, COUNT(DISTINCT v.MaVe) booked
-          FROM CHUYEN_BAY cb LEFT JOIN HANG_VE_CHUYEN_BAY hv ON hv.MaChuyenBay=cb.MaChuyenBay
-          LEFT JOIN GHE_CHUYEN_BAY g ON g.MaChuyenBay=hv.MaChuyenBay AND g.HangVe=hv.HangVe
-          LEFT JOIN VE_CHUYEN_BAY v ON v.MaChuyenBay=g.MaChuyenBay AND v.HangVe=g.HangVe AND v.TrangThai IN ('RESERVED','ISSUED','USED')
-          GROUP BY cb.MaChuyenBay,cb.SoHieuChuyen,cb.MaSanBayDi,cb.MaSanBayDen,cb.GioCatCanh,cb.GioDenDuKien,cb.TrangThai ORDER BY cb.GioCatCanh DESC""";
-        return jdbc.query(sql, (rs,n) -> {
-            LinkedHashMap<String,Object> m = new LinkedHashMap<>();
-            m.put("flightCode", rs.getString(1).trim());
-            m.put("flightNumber", rs.getString(2).trim());
-            m.put("origin", rs.getString(3).trim());
-            m.put("destination", rs.getString(4).trim());
-            LocalDateTime dep = rs.getTimestamp(5).toLocalDateTime();
-            LocalDateTime arr = rs.getTimestamp(6).toLocalDateTime();
-            m.put("departTime", dep.toLocalDate().toString() + " " + dep.toLocalTime().toString().substring(0,5));
-            m.put("arriveTime", arr.toLocalDate().toString() + " " + arr.toLocalTime().toString().substring(0,5));
+
+    public List<Map<String, Object>> adminFlights() {
+        // Use dbo.usp_AdminLayChuyenBay for listing all flights
+        List<Map<String, Object>> flights = jdbc.query("EXEC dbo.usp_AdminLayChuyenBay", (rs, n) -> {
+            LinkedHashMap<String, Object> m = new LinkedHashMap<>();
+            m.put("flightCode", rs.getString("MaChuyenBay").trim());
+            m.put("flightNumber", rs.getString("SoHieuChuyen").trim());
+            m.put("origin", rs.getString("MaSanBayDi").trim());
+            m.put("destination", rs.getString("MaSanBayDen").trim());
+            LocalDateTime dep = rs.getTimestamp("GioCatCanh").toLocalDateTime();
+            LocalDateTime arr = rs.getTimestamp("GioDenDuKien").toLocalDateTime();
+            m.put("departTime", dep.toLocalDate().toString() + " " + dep.toLocalTime().toString().substring(0, 5));
+            m.put("arriveTime", arr.toLocalDate().toString() + " " + arr.toLocalTime().toString().substring(0, 5));
             m.put("departDate", dep.toLocalDate().toString());
-            String dbStatus = rs.getString(7);
+            String dbStatus = rs.getString("TrangThai");
             m.put("status", uiStatus(dbStatus));
             m.put("dbStatus", dbStatus);
-            m.put("price", rs.getBigDecimal(8) == null ? BigDecimal.ZERO : rs.getBigDecimal(8));
-            int total = rs.getInt(9);
-            m.put("total", total == 0 ? 150 : total);
-            m.put("booked", rs.getInt(10));
-            m.put("aircraft", total >= 180 ? "A321" : (total == 162 ? "B737" : "A320"));
+            m.put("reason", rs.getString("LyDoThayDoi"));
             return m;
-        }, new Object[]{});
+        });
+
+        // Enrich with seat statistics and pricing
+        for (Map<String, Object> f : flights) {
+            String code = (String) f.get("flightCode");
+            List<Map<String, Object>> stats = jdbc.queryForList("""
+                SELECT
+                    ISNULL((SELECT MIN(GiaCoBan+ThuePhi) FROM HANG_VE_CHUYEN_BAY WHERE MaChuyenBay=?), 0) AS minPrice,
+                    (SELECT COUNT(*) FROM GHE_CHUYEN_BAY WHERE MaChuyenBay=?) AS totalSeats,
+                    (SELECT COUNT(*) FROM VE_CHUYEN_BAY WHERE MaChuyenBay=? AND TrangThai IN ('RESERVED','ISSUED','USED')) AS bookedSeats
+            """, code, code, code);
+
+            if (!stats.isEmpty()) {
+                Map<String, Object> row = stats.get(0);
+                BigDecimal minPrice = (BigDecimal) row.get("minPrice");
+                int total = ((Number) row.get("totalSeats")).intValue();
+                int booked = ((Number) row.get("bookedSeats")).intValue();
+                f.put("price", minPrice != null ? minPrice : BigDecimal.ZERO);
+                f.put("total", total == 0 ? 150 : total);
+                f.put("booked", booked);
+                f.put("aircraft", total >= 180 ? "A321" : (total == 162 ? "B737" : "A320"));
+            } else {
+                f.put("price", BigDecimal.ZERO);
+                f.put("total", 150);
+                f.put("booked", 0);
+                f.put("aircraft", "A320");
+            }
+        }
+
+        return flights;
     }
+
     public void updateStatus(String code, String status) {
-        String dbStatus = switch(status.toLowerCase()) {
-            case "selling","scheduled" -> "SCHEDULED";
+        String dbStatus = switch (status.toLowerCase()) {
+            case "selling", "scheduled" -> "SCHEDULED";
             case "delayed" -> "DELAYED";
-            case "departed","checkin","boarding" -> "DEPARTED";
+            case "departed", "checkin", "boarding" -> "DEPARTED";
             case "cancelled" -> "CANCELLED";
             case "arrived" -> "ARRIVED";
-            default -> throw new ApiException(HttpStatus.BAD_REQUEST,"Trạng thái không hợp lệ.");
+            default -> throw new ApiException(HttpStatus.BAD_REQUEST, "Trạng thái không hợp lệ: " + status);
         };
-        if (jdbc.update("UPDATE CHUYEN_BAY SET TrangThai=? WHERE MaChuyenBay=? OR SoHieuChuyen=?", dbStatus, code, code) == 0)
-            throw new ApiException(HttpStatus.NOT_FOUND,"Không tìm thấy chuyến bay.");
+
+        String realCode = resolveFlightCode(code);
+        String reason = "CANCELLED".equals(dbStatus) ? "Hủy chuyến theo yêu cầu quản trị viên"
+            : ("DELAYED".equals(dbStatus) ? "Thay đổi lịch trình vận hành" : null);
+
+        try {
+            jdbc.queryForList(
+                "EXEC dbo.usp_AdminCapNhatTrangThaiChuyenBay @MaChuyenBay=?, @TrangThai=?, @LyDoThayDoi=?",
+                realCode, dbStatus, reason
+            );
+        } catch (DataAccessException ex) {
+            String msg = ex.getMessage();
+            throw new ApiException(HttpStatus.BAD_REQUEST, "Không thể cập nhật trạng thái: " + (msg != null && msg.contains(":") ? msg.substring(msg.lastIndexOf(":") + 1).trim() : msg));
+        }
     }
+
     @Transactional
     public void createFlight(Requests.FlightUpsert req) {
         String code = req.flightCode();
         if (code == null || code.isBlank()) {
-            code = "SG" + String.format("%03d", (int)(Math.random() * 899 + 100));
+            code = "SG" + String.format("%03d", (int) (Math.random() * 899 + 100));
+        } else {
+            code = code.trim().toUpperCase();
         }
+
         LocalDateTime dep = req.departure();
         LocalDateTime arr = req.arrival();
         if (arr.isBefore(dep)) arr = arr.plusHours(2);
         LocalDateTime openCheckin = dep.minusHours(24);
         LocalDateTime closeCheckin = dep.minusHours(1);
-        String dbStatus = switch(req.status() == null ? "selling" : req.status().toLowerCase()) {
-            case "delayed" -> "DELAYED";
-            case "cancelled" -> "CANCELLED";
-            case "departed" -> "DEPARTED";
-            default -> "SCHEDULED";
-        };
-        jdbc.update("INSERT INTO CHUYEN_BAY(MaChuyenBay,SoHieuChuyen,GioCatCanh,GioDenDuKien,TrangThai,MoCheckInLuc,DongCheckInLuc,MaSanBayDi,MaSanBayDen) VALUES(?,?,?,?,?,?,?,?,?)",
-                code, req.flightNumber().trim().toUpperCase(), Timestamp.valueOf(dep), Timestamp.valueOf(arr), dbStatus, Timestamp.valueOf(openCheckin), Timestamp.valueOf(closeCheckin), req.origin().trim().toUpperCase(), req.destination().trim().toUpperCase());
 
-        BigDecimal base = req.basePrice();
-        BigDecimal tax = req.tax() != null ? req.tax() : base.multiply(new BigDecimal("0.1"));
-        jdbc.update("INSERT INTO HANG_VE_CHUYEN_BAY(MaChuyenBay,HangVe,GiaCoBan,ThuePhi,TrangThai) VALUES(?,?,?,?,?)",
-                code, "ECONOMY", base, tax, true);
-        jdbc.update("INSERT INTO HANG_VE_CHUYEN_BAY(MaChuyenBay,HangVe,GiaCoBan,ThuePhi,TrangThai) VALUES(?,?,?,?,?)",
-                code, "BUSINESS", base.multiply(new BigDecimal("1.8")), tax.multiply(new BigDecimal("1.5")), true);
+        try {
+            // 1. Tao chuyen bay qua usp_AdminThemChuyenBay
+            jdbc.queryForList(
+                "EXEC dbo.usp_AdminThemChuyenBay @MaChuyenBay=?, @SoHieuChuyen=?, @GioCatCanh=?, @GioDenDuKien=?, @MoCheckInLuc=?, @DongCheckInLuc=?, @MaSanBayDi=?, @MaSanBayDen=?",
+                code, req.flightNumber().trim().toUpperCase(), Timestamp.valueOf(dep), Timestamp.valueOf(arr),
+                Timestamp.valueOf(openCheckin), Timestamp.valueOf(closeCheckin),
+                req.origin().trim().toUpperCase(), req.destination().trim().toUpperCase()
+            );
 
-        // Generate standard seats: 8 business seats + 36 economy seats
-        String[] busSeats = {"01A","01B","01C","01D","02A","02B","02C","02D"};
-        for (String s : busSeats) {
-            jdbc.update("INSERT INTO GHE_CHUYEN_BAY(MaChuyenBay,HangVe,SoGhe) VALUES(?,?,?)", code, "BUSINESS", s);
-        }
-        String[] cols = {"A","B","C","D","E","F"};
-        for (int r = 3; r <= 8; r++) {
-            for (String c : cols) {
-                jdbc.update("INSERT INTO GHE_CHUYEN_BAY(MaChuyenBay,HangVe,SoGhe) VALUES(?,?,?)", code, "ECONOMY", String.format("%02d%s", r, c));
+            // 2. Thiet lap gia hang ve qua usp_AdminLuuHangVe
+            BigDecimal base = req.basePrice();
+            BigDecimal tax = req.tax() != null ? req.tax() : base.multiply(new BigDecimal("0.1"));
+            jdbc.queryForList(
+                "EXEC dbo.usp_AdminLuuHangVe @MaChuyenBay=?, @HangVe='ECONOMY', @GiaCoBan=?, @ThuePhi=?, @TrangThai=1",
+                code, base, tax
+            );
+            jdbc.queryForList(
+                "EXEC dbo.usp_AdminLuuHangVe @MaChuyenBay=?, @HangVe='BUSINESS', @GiaCoBan=?, @ThuePhi=?, @TrangThai=1",
+                code, base.multiply(new BigDecimal("1.8")), tax.multiply(new BigDecimal("1.5"))
+            );
+
+            // 3. Khoi tao ghe qua usp_AdminThemGhe
+            String[] busSeats = {"01A", "01B", "01C", "01D", "02A", "02B", "02C", "02D"};
+            for (String s : busSeats) {
+                jdbc.queryForList(
+                    "EXEC dbo.usp_AdminThemGhe @MaChuyenBay=?, @HangVe='BUSINESS', @SoGhe=?",
+                    code, s
+                );
             }
+
+            String[] cols = {"A", "B", "C", "D", "E", "F"};
+            for (int r = 3; r <= 8; r++) {
+                for (String c : cols) {
+                    jdbc.queryForList(
+                        "EXEC dbo.usp_AdminThemGhe @MaChuyenBay=?, @HangVe='ECONOMY', @SoGhe=?",
+                        code, String.format("%02d%s", r, c)
+                    );
+                }
+            }
+        } catch (DataAccessException ex) {
+            String msg = ex.getMessage();
+            throw new ApiException(HttpStatus.BAD_REQUEST, "Không thể tạo chuyến bay: " + (msg != null && msg.contains(":") ? msg.substring(msg.lastIndexOf(":") + 1).trim() : msg));
         }
     }
+
     @Transactional
     public void deleteFlight(String code) {
-        Integer booked = jdbc.queryForObject("SELECT COUNT(*) FROM VE_CHUYEN_BAY WHERE MaChuyenBay=? OR MaChuyenBay=(SELECT TOP 1 MaChuyenBay FROM CHUYEN_BAY WHERE SoHieuChuyen=?)", Integer.class, code, code);
+        String realCode = resolveFlightCode(code);
+        Integer booked = jdbc.queryForObject(
+            "SELECT COUNT(*) FROM VE_CHUYEN_BAY WHERE MaChuyenBay=?",
+            Integer.class, realCode
+        );
+
         if (booked != null && booked > 0) {
-            jdbc.update("UPDATE CHUYEN_BAY SET TrangThai='CANCELLED' WHERE MaChuyenBay=? OR SoHieuChuyen=?", code, code);
+            // Chuyen da co ve: chuyen trang thai CANCELLED qua SP
+            updateStatus(realCode, "CANCELLED");
         } else {
-            jdbc.update("DELETE FROM GHE_CHUYEN_BAY WHERE MaChuyenBay=? OR MaChuyenBay=(SELECT TOP 1 MaChuyenBay FROM CHUYEN_BAY WHERE SoHieuChuyen=?)", code, code);
-            jdbc.update("DELETE FROM HANG_VE_CHUYEN_BAY WHERE MaChuyenBay=? OR MaChuyenBay=(SELECT TOP 1 MaChuyenBay FROM CHUYEN_BAY WHERE SoHieuChuyen=?)", code, code);
-            jdbc.update("DELETE FROM CHUYEN_BAY WHERE MaChuyenBay=? OR SoHieuChuyen=?", code, code);
+            jdbc.update("DELETE FROM GHE_CHUYEN_BAY WHERE MaChuyenBay=?", realCode);
+            jdbc.update("DELETE FROM HANG_VE_CHUYEN_BAY WHERE MaChuyenBay=?", realCode);
+            jdbc.update("DELETE FROM CHUYEN_BAY WHERE MaChuyenBay=?", realCode);
         }
     }
-    private String uiStatus(String status) { return switch(status) { case "DEPARTED","ARRIVED" -> "departed"; case "CANCELLED" -> "cancelled"; case "DELAYED" -> "delayed"; default -> "selling"; }; }
+
+    private String resolveFlightCode(String input) {
+        List<String> list = jdbc.queryForList(
+            "SELECT MaChuyenBay FROM CHUYEN_BAY WHERE MaChuyenBay=? OR SoHieuChuyen=?",
+            String.class, input, input
+        );
+        if (list.isEmpty()) {
+            throw new ApiException(HttpStatus.NOT_FOUND, "Không tìm thấy chuyến bay: " + input);
+        }
+        return list.get(0).trim();
+    }
+
+    private String uiStatus(String status) {
+        if (status == null) return "selling";
+        return switch (status.toUpperCase()) {
+            case "DEPARTED", "ARRIVED" -> "departed";
+            case "CANCELLED" -> "cancelled";
+            case "DELAYED" -> "delayed";
+            default -> "selling";
+        };
+    }
 }

@@ -1,4 +1,4 @@
-﻿USE SkyGo_Cnpm;
+USE SkyGo_Cnpm;
 GO
 SET ANSI_NULLS ON;
 SET QUOTED_IDENTIFIER ON;
@@ -65,14 +65,38 @@ END;
 GO
 
 -- Chi backend doc hash de so khop BCrypt. Khong tra hash cho trinh duyet.
+-- Cho phep dang nhap bang ten dang nhap hoac email.
 CREATE OR ALTER PROCEDURE dbo.usp_LayTaiKhoanDangNhap
-    @TenDangNhap VARCHAR(50)
+    @TenDangNhap VARCHAR(254)
 AS
 BEGIN
     SET NOCOUNT ON;
-    SELECT MaTK, TenDangNhap, MatKhauHash, VaiTro, TrangThai, MaKhachHang
+    SELECT MaTK, TenDangNhap, Email, MatKhauHash, VaiTro, TrangThai, MaKhachHang
     FROM dbo.TAI_KHOAN_ND
-    WHERE TenDangNhap = LTRIM(RTRIM(@TenDangNhap));
+    WHERE TenDangNhap = LTRIM(RTRIM(@TenDangNhap))
+       OR Email = LOWER(LTRIM(RTRIM(@TenDangNhap)));
+END;
+GO
+
+CREATE OR ALTER PROCEDURE dbo.usp_DoiMatKhau
+    @MaTK BIGINT, @MatKhauHash VARCHAR(255)
+AS
+BEGIN
+    SET NOCOUNT ON; SET XACT_ABORT ON;
+    IF @MatKhauHash IS NULL OR LEN(@MatKhauHash) <> 60
+       OR LEFT(@MatKhauHash,4) NOT IN ('$2a$','$2b$','$2y$')
+        THROW 50002, N'BCrypt hash khong hop le.', 1;
+    BEGIN TRY
+        BEGIN TRANSACTION;
+        EXEC dbo.usp_KhoaNghiepVu;
+        UPDATE dbo.TAI_KHOAN_ND SET MatKhauHash = @MatKhauHash WHERE MaTK = @MaTK;
+        IF @@ROWCOUNT = 0 THROW 50004, N'Tai khoan khong ton tai.', 1;
+        COMMIT TRANSACTION;
+    END TRY
+    BEGIN CATCH
+        IF @@TRANCOUNT > 0 ROLLBACK TRANSACTION;
+        THROW;
+    END CATCH;
 END;
 GO
 

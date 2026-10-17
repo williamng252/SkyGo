@@ -10,8 +10,8 @@ spring:
     driver-class-name: com.microsoft.sqlserver.jdbc.SQLServerDriver
     hikari:
       connection-timeout: 30000
-      minimum-idle: 2
-      maximum-pool-size: 5
+      minimum-idle: 1
+      maximum-pool-size: 1
   jackson:
     default-property-inclusion: non_null
   web:

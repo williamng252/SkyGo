@@ -1179,18 +1179,39 @@ function initCheckinForm() {
 
 function openCheckinSeatSelection(pnr, record) {
     activeCheckinRecord = record;
-    activeCheckinSeat = record.seat || '12A';
+    // Khong duoc gan cung '12A' vi 12A co the da bi hanh khach khac chon hoac khong thuoc hang ve.
+    // Lay ghe hien tai neu da co, hoac lay ghe dau tien trong danh sach ghe kha dung thuc te tu CSDL
+    const availSeats = record.availableSeats || [];
+    activeCheckinSeat = record.seat || (availSeats.length > 0 ? availSeats[0] : null);
 
     const summary = document.getElementById('checkin-seatmap-summary');
     if (summary) {
+        const seatText = record.seat
+            ? `<span style="color:var(--success);font-weight:700;">${record.seat}</span>`
+            : (activeCheckinSeat
+                ? `<span style="color:var(--primary);font-weight:700;">${activeCheckinSeat} (Gợi ý)</span>`
+                : '<span style="color:#eab308;font-weight:700;">Chưa chọn</span>');
         summary.innerHTML = `
             <div><strong>Hành khách:</strong> ${record.passengerName} &bull; <strong>Chuyến bay:</strong> ${record.flightNumber} (${record.route})</div>
-            <div style="margin-top:4px;color:var(--primary);font-weight:600;"><i class="fa-solid fa-clock"></i> Khung giờ check-in hợp lệ (24h - 1h trước giờ bay). Ghế hiện tại: <strong>${record.seat || 'Chưa chọn'}</strong></div>
+            <div style="margin-top:6px;font-size:13px;color:var(--text-muted);">
+                <i class="fa-solid fa-ticket"></i> Hạng vé: <strong>${record.cabinClass || record.ticketClass || 'Phổ thông'}</strong>
+                &bull; <i class="fa-solid fa-clock"></i> Khung giờ check-in: <strong>24h - 1h trước bay</strong>
+                &bull; <i class="fa-solid fa-chair"></i> Ghế chọn: ${seatText}
+            </div>
         `;
     }
 
     buildCheckinSeatMap(activeCheckinSeat);
     openModal('modal-checkin-seatmap');
+
+    // Tu dong cuon toi vi tri ghe duoc chon
+    setTimeout(() => {
+        const map = document.getElementById('checkin-seat-map');
+        const selectedElem = map?.querySelector('.seat.selected');
+        if (selectedElem) {
+            selectedElem.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+    }, 150);
 }
 
 function buildCheckinSeatMap(currentSeat) {
@@ -1199,6 +1220,8 @@ function buildCheckinSeatMap(currentSeat) {
     const rows = 18;
     const cols = ['A', 'B', 'C', 'D', 'E', 'F'];
     let html = '';
+
+    const availSeats = activeCheckinRecord?.availableSeats || [];
 
     html += `<div class="seat-row">
         <div class="row-number"></div>
@@ -1211,14 +1234,30 @@ function buildCheckinSeatMap(currentSeat) {
         html += `<div class="seat-row"><div class="row-number">${r}</div>`;
         cols.forEach((col, ci) => {
             const seatId = `${r}${col}`;
-            const isTaken = (activeCheckinRecord?.unavailableSeats || []).includes(seatId) && seatId !== currentSeat;
+            // Quy tac: Chi nhung ghe thuc su co trong danh sach ghe kha dung (availableSeats)
+            // cua chuyen bay va hang ve moi duoc xem la TRONG (click duoc).
+            // Cac ghe da bi dat hoac khong ton tai tren chuyen bay/hang ve deu phai danh dau 'taken' (khong the click).
+            const isAvailable = availSeats.includes(seatId);
+            const isCurrent = seatId === currentSeat;
+            const isClickable = isAvailable || isCurrent;
             const isSelected = seatId === activeCheckinSeat;
 
             let cls = 'seat';
-            if (isTaken) cls += ' taken';
-            if (isSelected) cls += ' selected';
+            let title = `Ghế ${seatId}`;
 
-            html += `<div class="${cls}" data-checkin-seat="${seatId}">${seatId}</div>`;
+            if (!isClickable) {
+                cls += ' taken';
+                title = `Ghế ${seatId}: Không khả dụng / Đã đặt`;
+            } else {
+                title = `Ghế ${seatId}: Khả dụng (Trống)`;
+            }
+
+            if (isSelected) {
+                cls += ' selected';
+                title = `Ghế ${seatId}: Đang được chọn`;
+            }
+
+            html += `<div class="${cls}" data-checkin-seat="${seatId}" title="${title}">${seatId}</div>`;
             if (ci === 2) html += `<div class="aisle"></div>`;
         });
         html += `</div>`;
@@ -1231,6 +1270,18 @@ function buildCheckinSeatMap(currentSeat) {
             map.querySelectorAll('.seat.selected').forEach(s => s.classList.remove('selected'));
             seat.classList.add('selected');
             activeCheckinSeat = seat.dataset.checkinSeat;
+
+            const summary = document.getElementById('checkin-seatmap-summary');
+            if (summary && activeCheckinRecord) {
+                const infoDiv = summary.querySelector('div:last-child');
+                if (infoDiv) {
+                    infoDiv.innerHTML = `
+                        <i class="fa-solid fa-ticket"></i> Hạng vé: <strong>${activeCheckinRecord.cabinClass || activeCheckinRecord.ticketClass || 'Phổ thông'}</strong>
+                        &bull; <i class="fa-solid fa-clock"></i> Khung giờ check-in: <strong>24h - 1h trước bay</strong>
+                        &bull; <i class="fa-solid fa-chair"></i> Ghế chọn: <span style="color:var(--primary);font-weight:700;">${activeCheckinSeat} (Đang chọn)</span>
+                    `;
+                }
+            }
         });
     });
 }
@@ -1241,20 +1292,32 @@ function initCheckinSeatmapModal() {
 
     document.getElementById('btn-confirm-checkin-seat')?.addEventListener('click', async () => {
         if (!activeCheckinRecord) return;
+        if (!activeCheckinSeat) {
+            showToast('warning', 'Chưa chọn ghế', 'Vui lòng bấm chọn một ghế trống màu trắng trên sơ đồ trước khi hoàn tất.');
+            return;
+        }
+
         const button = document.getElementById('btn-confirm-checkin-seat');
         button.disabled = true;
         try {
             const res = await fetch(`${API_BASE_URL}/checkin/confirm`, {
                 method: 'POST', headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ pnr: activeCheckinRecord.pnr, lastName: document.getElementById('checkin-lastname-input').value.trim(), seat: activeCheckinSeat })
+                body: JSON.stringify({
+                    pnr: activeCheckinRecord.pnr,
+                    lastName: document.getElementById('checkin-lastname-input').value.trim(),
+                    seat: activeCheckinSeat
+                })
             });
             const data = await res.json();
             if (!res.ok) throw new Error(data.message || 'Không thể ghi nhận check-in.');
             closeModal('modal-checkin-seatmap');
             displayCheckinSuccess(data.pnr, data);
             showToast('success', 'Hoàn tất check-in', `Ghế ngồi ${data.seat} đã được lưu vào database.`);
-        } catch (err) { showToast('error', 'Check-in thất bại', err.message); }
-        finally { button.disabled = false; }
+        } catch (err) {
+            showToast('error', 'Check-in thất bại', err.message);
+        } finally {
+            button.disabled = false;
+        }
     });
 }
 

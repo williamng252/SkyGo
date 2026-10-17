@@ -1,4 +1,4 @@
-﻿USE SkyGo_Cnpm;
+USE SkyGo_Cnpm;
 GO
 SET ANSI_NULLS ON;
 SET QUOTED_IDENTIFIER ON;
@@ -30,6 +30,8 @@ GRANT EXECUTE ON OBJECT::dbo.usp_AdminTimKhachHang TO role_SkyGoApp;
 GRANT EXECUTE ON OBJECT::dbo.usp_CapNhatHoSoKhachHang TO role_SkyGoApp;
 GRANT EXECUTE ON OBJECT::dbo.usp_CheckIn TO role_SkyGoApp;
 GRANT EXECUTE ON OBJECT::dbo.usp_DangKy TO role_SkyGoApp;
+GRANT EXECUTE ON OBJECT::dbo.usp_DoiMatKhau TO role_SkyGoApp;
+GRANT EXECUTE ON OBJECT::dbo.usp_HuyDonDatVe TO role_SkyGoApp;
 GRANT EXECUTE ON OBJECT::dbo.usp_LayChiTietDon TO role_SkyGoApp;
 GRANT EXECUTE ON OBJECT::dbo.usp_LayDanhSachSanBay TO role_SkyGoApp;
 GRANT EXECUTE ON OBJECT::dbo.usp_LayGheKhaDung TO role_SkyGoApp;

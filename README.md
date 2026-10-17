@@ -14,7 +14,15 @@ Mở SSMS hoặc terminal `sqlcmd` bằng quyền tạo database và chạy theo
 
 1. `DataBase/01_schemal.sql` — Tạo cấu trúc 11 bảng, khóa chính, khóa ngoại, ràng buộc và cột tự tính.
 2. `DataBase/02_seed.sql` — Nạp dữ liệu mẫu (sân bay, chuyến bay, hạng vé, ghế, tài khoản mẫu).
-3. `DataBase/03_backend_objects.sql` — Tạo Store Procedure (`usp_TimChuyenBay`, `usp_LayLichSuDatVe`), Function (`fn_TinhTongTienDon`), View (`vw_ChiTietVe`) và Index tăng tốc truy vấn.
+3. `DataBase/03_functions.sql` — Các function (`fn_TinhTongTienDon`, `fn_SoChoCon`, `fn_DanhSachGheKhaDung`).
+4. `DataBase/04_views.sql` — Các view (`vw_ChiTietVe`, `vw_DoanhThuNgay`).
+5. `DataBase/05_DB03_tai_khoan_tim_chuyen.sql` — SP tài khoản, hồ sơ, tìm chuyến bay (`usp_DangKy`, `usp_LayTaiKhoanDangNhap`, `usp_TimChuyenBay`,...).
+6. `DataBase/06_DB04_tao_don_va_ve.sql` — SP tạo đơn, vé và hủy đơn (`usp_TaoDonDatVe`, `usp_HuyDonDatVe`).
+7. `DataBase/07_DB05_thanh_toan.sql` — SP thanh toán mô phỏng (`usp_XacNhanThanhToanMoPhong`, `usp_XuLyDonHetHan`).
+8. `DataBase/08_DB06_checkin_the_len_may_bay.sql` — SP check-in và boarding pass (`usp_LayGheKhaDung`, `usp_CheckIn`, `usp_LayTheLenMayBay`).
+9. `DataBase/09_DB07_tra_cuu_quan_tri_thong_ke.sql` — SP quản trị chuyến, đơn, khách hàng và thống kê bán vé.
+10. `DataBase/10_DB08_trigger_index.sql` — Trigger ràng buộc và index tăng tốc.
+11. `DataBase/11_DB08_phan_quyen.sql` — Phân quyền role SQL Server.
 
 ## Cấu hình và Khởi Chạy
 
