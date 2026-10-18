@@ -7,8 +7,9 @@ target/
 # Log file
 *.log
 
-# Native auth DLL redundant
+# Keep the JDBC-versioned Windows authentication DLL; ignore other versions
 mssql-jdbc_auth-*.dll
+!mssql-jdbc_auth-12.8.1.x64.dll
 
 # Environment variables
 .env

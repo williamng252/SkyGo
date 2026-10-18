@@ -1583,9 +1583,10 @@ function initModals() {
             origin: origin,
             destination: destination,
             departure: `${departDate}T${departTime}:00`,
-            arrival: `${departDate}T${arriveTime}:00`,
+            arrival: `${arriveTime <= departTime ? addFlightDay(departDate) : departDate}T${arriveTime}:00`,
             basePrice: price,
-            status: status
+            status: status,
+            aircraft: document.getElementById('af-aircraft').value
         };
 
         try {
@@ -1613,26 +1614,39 @@ function initModals() {
         const flight = adminFlights.find(f => f.flightNumber === origNo);
         if (!flight) return;
 
-        flight.flightNumber = document.getElementById('ef-number').value.trim().toUpperCase();
-        flight.origin = document.getElementById('ef-origin').value;
-        flight.destination = document.getElementById('ef-destination').value;
-        flight.departTime = document.getElementById('ef-depart-time').value;
-        flight.arriveTime = document.getElementById('ef-arrive-time').value;
-        flight.price = Number(document.getElementById('ef-price').value);
-        flight.status = document.getElementById('ef-status').value;
-        flight.aircraft = document.getElementById('ef-aircraft').value;
-        flight.total = flight.aircraft === 'A321' ? 180 : 150;
+        const flightNumber = document.getElementById('ef-number').value.trim().toUpperCase();
+        const origin = document.getElementById('ef-origin').value;
+        const destination = document.getElementById('ef-destination').value;
+        const departDate = document.getElementById('ef-depart-date').value;
+        const departTime = document.getElementById('ef-depart-time').value;
+        const arriveTime = document.getElementById('ef-arrive-time').value;
+        const basePrice = Number(document.getElementById('ef-price').value);
+        if (!flightNumber || !departDate || !departTime || !arriveTime || !Number.isFinite(basePrice) || basePrice < 0) {
+            showToast('error', 'Thiếu thông tin', 'Vui lòng kiểm tra đầy đủ thông tin chuyến bay.');
+            return;
+        }
 
         try {
-            const res = await fetch(`${API_BASE_URL}/admin/flights/${encodeURIComponent(flight.flightCode || origNo)}/status`, {
-                method: 'PATCH', headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ status: flight.status })
+            const arrivalDate = arriveTime <= departTime ? addFlightDay(departDate) : departDate;
+            const res = await fetch(`${API_BASE_URL}/admin/flights/${encodeURIComponent(flight.flightCode)}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    flightNumber,
+                    origin,
+                    destination,
+                    departure: `${departDate}T${departTime}:00`,
+                    arrival: `${arrivalDate}T${arriveTime}:00`,
+                    basePrice,
+                    status: document.getElementById('ef-status').value,
+                    aircraft: document.getElementById('ef-aircraft').value
+                })
             });
             const data = await res.json();
-            if (!res.ok) throw new Error(data.message || 'Không thể cập nhật trạng thái.');
+            if (!res.ok) throw new Error(data.message || 'Không thể cập nhật chuyến bay.');
             closeModal('modal-edit-flight');
             await loadAdminFlights();
-            showToast('success', 'Cập nhật thành công', `Trạng thái chuyến bay ${flight.flightNumber} đã được lưu vào database.`);
+            showToast('success', 'Cập nhật thành công', `Thông tin chuyến bay ${flightNumber} đã được lưu vào database.`);
         } catch (err) { showToast('error', 'Cập nhật thất bại', err.message); }
     });
 
@@ -1996,13 +2010,19 @@ function adminEditFlight(flightNo) {
     document.getElementById('ef-number').value = flight.flightNumber;
     document.getElementById('ef-origin').value = flight.origin;
     document.getElementById('ef-destination').value = flight.destination;
-    document.getElementById('ef-depart-time').value = flight.departTime || '08:00';
-    document.getElementById('ef-arrive-time').value = flight.arriveTime || '10:00';
-    document.getElementById('ef-price').value = flight.price || 1450000;
+    document.getElementById('ef-depart-date').value = flight.departDate || flight.departTime?.slice(0, 10) || '';
+    document.getElementById('ef-depart-time').value = flight.departTime?.slice(-5) || '08:00';
+    document.getElementById('ef-arrive-time').value = flight.arriveTime?.slice(-5) || '10:00';
+    document.getElementById('ef-price').value = flight.basePrice ?? flight.price ?? 1450000;
     document.getElementById('ef-aircraft').value = flight.aircraft || (flight.total === 180 ? 'A321' : 'A320');
     document.getElementById('ef-status').value = flight.status || 'selling';
 
     openModal('modal-edit-flight');
+}
+
+function addFlightDay(date) {
+    const [year, month, day] = date.split('-').map(Number);
+    return new Date(Date.UTC(year, month - 1, day + 1)).toISOString().slice(0, 10);
 }
 
 async function adminDeleteFlight(flightNo) {

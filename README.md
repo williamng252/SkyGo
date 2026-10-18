@@ -4,7 +4,7 @@ SkyGo là hệ thống website bán vé máy bay hoàn chỉnh với backend Spr
 
 ## Yêu cầu môi trường
 
-- JDK 17+ và Maven 3.9+ (kiểm tra bằng `java -version`, `mvn -version`).
+- JDK 25+ và Maven 3.9+ (kiểm tra bằng `java -version`, `mvn -version`).
 - SQL Server (Developer, Standard hoặc Express) đang bật TCP/IP.
 - SSMS hoặc Azure Data Studio để chạy script CSDL.
 
@@ -26,7 +26,7 @@ Mở SSMS hoặc terminal `sqlcmd` bằng quyền tạo database và chạy theo
 
 ## Cấu hình và Khởi Chạy
 
-Dự án đã tích hợp sẵn thư viện xác thực native `mssql-jdbc_auth.dll` cho Windows Authentication.
+Dự án tích hợp thư viện xác thực native `mssql-jdbc_auth-12.8.1.x64.dll` cho Windows Authentication. Maven tự cấu hình thư mục dự án làm đường dẫn nạp thư viện này.
 
 ### Cách 1: Chạy bằng Windows Authentication (Khuyên dùng - Nhanh nhất)
 Không cần cấu hình tài khoản `sa` hay mật khẩu, chỉ cần mở PowerShell trong thư mục dự án và gõ:
@@ -35,7 +35,7 @@ Không cần cấu hình tài khoản `sa` hay mật khẩu, chỉ cần mở Po
 mvn spring-boot:run
 ```
 
-*(Nếu SQL Server của bạn dùng cổng 1433 thay vì 1434, chỉ cần thêm `$env:SKYGO_DB_PORT=1433` trước khi chạy).*
+*(Ứng dụng mặc định kết nối SQL Server tại cổng 1433. Nếu SQL Server của bạn dùng cổng khác, đặt `$env:SKYGO_DB_PORT` trước khi chạy, ví dụ `$env:SKYGO_DB_PORT=1434`.)*
 
 ### Cách 2: Chạy bằng SQL Server Authentication (sa)
 
@@ -80,7 +80,7 @@ Kiểm tra sức khỏe hệ thống: [http://localhost:8080/api/health](http://
 - **Quản trị viên (Admin):**
   - `GET /api/admin/flights` — Lấy danh sách chuyến bay kèm tỷ lệ ghế đã bán.
   - `POST /api/admin/flights` — Thêm chuyến bay mới kèm khởi tạo hạng vé và ghế ngồi.
+  - `PUT /api/admin/flights/{code}` — Cập nhật số hiệu, lộ trình, lịch bay, giá vé, trạng thái và loại tàu bay.
   - `PATCH /api/admin/flights/{code}/status` — Cập nhật trạng thái chuyến (Đang bán, Check-in, Boarding, Delay, Đã bay, Hủy).
   - `DELETE /api/admin/flights/{code}` — Xóa chuyến bay hoặc hủy nếu đã có vé.
   - `GET /api/admin/stats` — Thống kê tổng số đơn, đơn đã thanh toán, tổng doanh thu thực tế, số chuyến bay và khách hàng.
-

@@ -16,7 +16,7 @@ public final class Requests {
     public record CheckinConfirm(@NotBlank String pnr, @NotBlank String lastName, @NotBlank String seat) {}
     public record FlightUpsert(String flightCode, @NotBlank String flightNumber, @NotBlank String origin, @NotBlank String destination,
                                @NotNull java.time.LocalDateTime departure, @NotNull java.time.LocalDateTime arrival,
-                               @NotNull @DecimalMin("0") BigDecimal basePrice, BigDecimal tax, String status) {}
+                               @NotNull @DecimalMin("0") BigDecimal basePrice, BigDecimal tax, String status, String aircraft) {}
     public record FlightStatus(@NotBlank String status) {}
     public record Profile(@NotBlank String fullName, String phone, String newPassword) {}
 }

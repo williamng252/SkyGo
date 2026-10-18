@@ -3,6 +3,7 @@ package vn.skygo.service;
 import org.springframework.dao.DataAccessException;
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.lang.NonNull;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import vn.skygo.api.ApiException;
@@ -120,16 +121,19 @@ public class FlightService {
             List<Map<String, Object>> stats = jdbc.queryForList("""
                 SELECT
                     ISNULL((SELECT MIN(GiaCoBan+ThuePhi) FROM HANG_VE_CHUYEN_BAY WHERE MaChuyenBay=?), 0) AS minPrice,
+                    ISNULL((SELECT GiaCoBan FROM HANG_VE_CHUYEN_BAY WHERE MaChuyenBay=? AND HangVe='ECONOMY'), 0) AS basePrice,
                     (SELECT COUNT(*) FROM GHE_CHUYEN_BAY WHERE MaChuyenBay=?) AS totalSeats,
                     (SELECT COUNT(*) FROM VE_CHUYEN_BAY WHERE MaChuyenBay=? AND TrangThai IN ('RESERVED','ISSUED','USED')) AS bookedSeats
-            """, code, code, code);
+            """, code, code, code, code);
 
             if (!stats.isEmpty()) {
                 Map<String, Object> row = stats.get(0);
                 BigDecimal minPrice = (BigDecimal) row.get("minPrice");
+                BigDecimal basePrice = (BigDecimal) row.get("basePrice");
                 int total = ((Number) row.get("totalSeats")).intValue();
                 int booked = ((Number) row.get("bookedSeats")).intValue();
                 f.put("price", minPrice != null ? minPrice : BigDecimal.ZERO);
+                f.put("basePrice", basePrice != null ? basePrice : BigDecimal.ZERO);
                 f.put("total", total == 0 ? 150 : total);
                 f.put("booked", booked);
                 f.put("aircraft", total >= 180 ? "A321" : (total == 162 ? "B737" : "A320"));
@@ -145,14 +149,7 @@ public class FlightService {
     }
 
     public void updateStatus(String code, String status) {
-        String dbStatus = switch (status.toLowerCase()) {
-            case "selling", "scheduled" -> "SCHEDULED";
-            case "delayed" -> "DELAYED";
-            case "departed", "checkin", "boarding" -> "DEPARTED";
-            case "cancelled" -> "CANCELLED";
-            case "arrived" -> "ARRIVED";
-            default -> throw new ApiException(HttpStatus.BAD_REQUEST, "Trạng thái không hợp lệ: " + status);
-        };
+        String dbStatus = databaseStatus(status);
 
         String realCode = resolveFlightCode(code);
         String reason = "CANCELLED".equals(dbStatus) ? "Hủy chuyến theo yêu cầu quản trị viên"
@@ -180,9 +177,10 @@ public class FlightService {
 
         LocalDateTime dep = req.departure();
         LocalDateTime arr = req.arrival();
-        if (arr.isBefore(dep)) arr = arr.plusHours(2);
+        if (!arr.isAfter(dep)) arr = arr.plusDays(1);
         LocalDateTime openCheckin = dep.minusHours(24);
         LocalDateTime closeCheckin = dep.minusHours(1);
+        String aircraft = normalizeAircraft(req.aircraft());
 
         try {
             // 1. Tao chuyen bay qua usp_AdminThemChuyenBay
@@ -193,40 +191,143 @@ public class FlightService {
                 req.origin().trim().toUpperCase(), req.destination().trim().toUpperCase()
             );
 
-            // 2. Thiet lap gia hang ve qua usp_AdminLuuHangVe
-            BigDecimal base = req.basePrice();
-            BigDecimal tax = req.tax() != null ? req.tax() : base.multiply(new BigDecimal("0.1"));
-            jdbc.queryForList(
-                "EXEC dbo.usp_AdminLuuHangVe @MaChuyenBay=?, @HangVe='ECONOMY', @GiaCoBan=?, @ThuePhi=?, @TrangThai=1",
-                code, base, tax
-            );
-            jdbc.queryForList(
-                "EXEC dbo.usp_AdminLuuHangVe @MaChuyenBay=?, @HangVe='BUSINESS', @GiaCoBan=?, @ThuePhi=?, @TrangThai=1",
-                code, base.multiply(new BigDecimal("1.8")), tax.multiply(new BigDecimal("1.5"))
-            );
+            saveFares(code, req);
+            insertSeats(code, aircraft);
 
-            // 3. Khoi tao ghe qua usp_AdminThemGhe
-            String[] busSeats = {"01A", "01B", "01C", "01D", "02A", "02B", "02C", "02D"};
-            for (String s : busSeats) {
-                jdbc.queryForList(
-                    "EXEC dbo.usp_AdminThemGhe @MaChuyenBay=?, @HangVe='BUSINESS', @SoGhe=?",
-                    code, s
-                );
-            }
-
-            String[] cols = {"A", "B", "C", "D", "E", "F"};
-            for (int r = 3; r <= 8; r++) {
-                for (String c : cols) {
-                    jdbc.queryForList(
-                        "EXEC dbo.usp_AdminThemGhe @MaChuyenBay=?, @HangVe='ECONOMY', @SoGhe=?",
-                        code, String.format("%02d%s", r, c)
-                    );
-                }
+            if (req.status() != null && !"selling".equalsIgnoreCase(req.status())
+                && !"scheduled".equalsIgnoreCase(req.status())) {
+                updateStatus(code, req.status());
             }
         } catch (DataAccessException ex) {
             String msg = ex.getMessage();
             throw new ApiException(HttpStatus.BAD_REQUEST, "Không thể tạo chuyến bay: " + (msg != null && msg.contains(":") ? msg.substring(msg.lastIndexOf(":") + 1).trim() : msg));
         }
+    }
+
+    @Transactional
+    public void updateFlight(String code, Requests.FlightUpsert req) {
+        LocalDateTime dep = req.departure();
+        LocalDateTime arr = req.arrival();
+        if (!arr.isAfter(dep)) arr = arr.plusDays(1);
+        String aircraft = normalizeAircraft(req.aircraft());
+        String realCode = resolveFlightCode(code);
+
+        try {
+            jdbc.queryForList(
+                "EXEC dbo.usp_AdminSuaChuyenBay @MaChuyenBay=?, @SoHieuChuyen=?, @GioCatCanh=?, @GioDenDuKien=?, @MoCheckInLuc=?, @DongCheckInLuc=?, @MaSanBayDi=?, @MaSanBayDen=?",
+                realCode, req.flightNumber().trim().toUpperCase(), Timestamp.valueOf(dep), Timestamp.valueOf(arr),
+                Timestamp.valueOf(dep.minusHours(24)), Timestamp.valueOf(dep.minusHours(1)),
+                req.origin().trim().toUpperCase(), req.destination().trim().toUpperCase()
+            );
+
+            saveFares(realCode, req);
+            updateAircraftIfChanged(realCode, aircraft);
+
+            if (req.status() != null) {
+                String currentStatus = jdbc.queryForObject(
+                    "SELECT TrangThai FROM dbo.CHUYEN_BAY WHERE MaChuyenBay=?",
+                    String.class, realCode
+                );
+                String requestedStatus = databaseStatus(req.status());
+                if (!requestedStatus.equalsIgnoreCase(currentStatus)) {
+                    updateStatus(realCode, req.status());
+                }
+            }
+        } catch (DataAccessException ex) {
+            String msg = ex.getMessage();
+            throw new ApiException(HttpStatus.BAD_REQUEST, "Không thể cập nhật chuyến bay: " + (msg != null && msg.contains(":") ? msg.substring(msg.lastIndexOf(":") + 1).trim() : msg));
+        }
+    }
+
+    private void saveFares(String code, Requests.FlightUpsert req) {
+        BigDecimal base = req.basePrice();
+        BigDecimal tax = req.tax() != null ? req.tax() : base.multiply(new BigDecimal("0.1"));
+        jdbc.queryForList(
+            "EXEC dbo.usp_AdminLuuHangVe @MaChuyenBay=?, @HangVe='ECONOMY', @GiaCoBan=?, @ThuePhi=?, @TrangThai=1",
+            code, base, tax
+        );
+        jdbc.queryForList(
+            "EXEC dbo.usp_AdminLuuHangVe @MaChuyenBay=?, @HangVe='BUSINESS', @GiaCoBan=?, @ThuePhi=?, @TrangThai=1",
+            code, base.multiply(new BigDecimal("1.8")), tax.multiply(new BigDecimal("1.5"))
+        );
+    }
+
+    private void updateAircraftIfChanged(String code, String requestedAircraft) {
+        Integer seatCount = jdbc.queryForObject(
+            "SELECT COUNT(*) FROM dbo.GHE_CHUYEN_BAY WHERE MaChuyenBay=?",
+            Integer.class, code
+        );
+        String currentAircraft = aircraftForSeatCount(seatCount == null ? 0 : seatCount);
+        if (requestedAircraft.equals(currentAircraft)) return;
+
+        Integer ticketCount = jdbc.queryForObject(
+            "SELECT COUNT(*) FROM dbo.VE_CHUYEN_BAY WHERE MaChuyenBay=?",
+            Integer.class, code
+        );
+        if (ticketCount != null && ticketCount > 0) {
+            throw new ApiException(HttpStatus.CONFLICT, "Không thể đổi loại tàu bay sau khi chuyến bay đã có vé.");
+        }
+
+        jdbc.update("DELETE FROM dbo.GHE_CHUYEN_BAY WHERE MaChuyenBay=?", code);
+        insertSeats(code, requestedAircraft);
+    }
+
+    private void insertSeats(String code, String aircraft) {
+        jdbc.batchUpdate(
+            "INSERT INTO dbo.GHE_CHUYEN_BAY(MaChuyenBay,HangVe,SoGhe) VALUES(?,?,?)",
+            createSeats(code, aircraft)
+        );
+    }
+
+    private @NonNull List<Object[]> createSeats(String code, String aircraft) {
+        int capacity = switch (aircraft) {
+            case "A321" -> 180;
+            case "B737" -> 162;
+            default -> 150;
+        };
+        List<Object[]> seats = new ArrayList<>(capacity);
+        String[] businessColumns = {"A", "B", "C", "D"};
+        for (int row = 1; row <= 2; row++) {
+            for (String column : businessColumns) {
+                seats.add(new Object[]{code, "BUSINESS", String.format("%02d%s", row, column)});
+            }
+        }
+
+        String[] economyColumns = {"A", "B", "C", "D", "E", "F"};
+        int economyCount = capacity - seats.size();
+        for (int index = 0; index < economyCount; index++) {
+            int row = 3 + index / economyColumns.length;
+            String seat = String.format("%02d%s", row, economyColumns[index % economyColumns.length]);
+            seats.add(new Object[]{code, "ECONOMY", seat});
+        }
+        return seats;
+    }
+
+    private String normalizeAircraft(String aircraft) {
+        String normalized = aircraft == null || aircraft.isBlank() ? "A320" : aircraft.trim().toUpperCase();
+        if (!Set.of("A320", "A321", "B737").contains(normalized)) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "Loại tàu bay không hợp lệ.");
+        }
+        return normalized;
+    }
+
+    private String aircraftForSeatCount(int seatCount) {
+        return switch (seatCount) {
+            case 180 -> "A321";
+            case 162 -> "B737";
+            default -> "A320";
+        };
+    }
+
+    private String databaseStatus(String status) {
+        return switch (status.toLowerCase()) {
+            case "selling", "scheduled" -> "SCHEDULED";
+            case "delayed" -> "DELAYED";
+            case "departed", "checkin", "boarding" -> "DEPARTED";
+            case "cancelled" -> "CANCELLED";
+            case "arrived" -> "ARRIVED";
+            default -> throw new ApiException(HttpStatus.BAD_REQUEST, "Trạng thái không hợp lệ: " + status);
+        };
     }
 
     @Transactional

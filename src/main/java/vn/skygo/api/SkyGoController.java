@@ -35,6 +35,7 @@ public class SkyGoController {
 
     @GetMapping("/admin/flights") public List<Map<String,Object>> adminFlights(HttpServletRequest request){sessions.requireAdmin(request);return flights.adminFlights();}
     @PostMapping("/admin/flights") public Map<String,String> createFlight(HttpServletRequest request,@Valid @RequestBody Requests.FlightUpsert r){sessions.requireAdmin(request);flights.createFlight(r);return Map.of("message","Đã tạo chuyến bay mới thành công.");}
+    @PutMapping("/admin/flights/{code}") public Map<String,String> updateFlight(HttpServletRequest request,@PathVariable String code,@Valid @RequestBody Requests.FlightUpsert r){sessions.requireAdmin(request);flights.updateFlight(code,r);return Map.of("message","Đã cập nhật chuyến bay thành công.");}
     @DeleteMapping("/admin/flights/{code}") public Map<String,String> deleteFlight(HttpServletRequest request,@PathVariable String code){sessions.requireAdmin(request);flights.deleteFlight(code);return Map.of("message","Đã xóa chuyến bay.");}
     @PatchMapping("/admin/flights/{code}/status") public Map<String,String> status(HttpServletRequest request,@PathVariable String code,@Valid @RequestBody Requests.FlightStatus r){sessions.requireAdmin(request);flights.updateStatus(code,r.status());return Map.of("message","Đã cập nhật trạng thái chuyến bay.");}
     @GetMapping("/admin/stats") public Map<String,Object> adminStats(HttpServletRequest request){sessions.requireAdmin(request);return bookings.adminStats();}
@@ -42,4 +43,3 @@ public class SkyGoController {
     @GetMapping("/admin/customers") public List<Map<String,Object>> adminCustomers(HttpServletRequest request,@RequestParam(required=false) String keyword){sessions.requireAdmin(request);return bookings.adminCustomers(keyword);}
     @GetMapping("/admin/sales-report") public List<Map<String,Object>> adminSalesReport(HttpServletRequest request,@RequestParam(required=false) LocalDate fromDate,@RequestParam(required=false) LocalDate toDate){sessions.requireAdmin(request);return bookings.adminSalesReport(fromDate,toDate);}
 }
-

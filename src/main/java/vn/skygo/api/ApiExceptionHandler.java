@@ -12,13 +12,18 @@ public class ApiExceptionHandler {
     private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(ApiExceptionHandler.class);
 
     @ExceptionHandler(ApiException.class)
-    ResponseEntity<Map<String,String>> api(ApiException e) { return ResponseEntity.status(e.status()).body(Map.of("message", e.getMessage())); }
+    ResponseEntity<Map<String,String>> api(ApiException e) { return ResponseEntity.status(e.status().value()).body(Map.of("message", e.getMessage())); }
 
     @ExceptionHandler(MethodArgumentNotValidException.class)
     ResponseEntity<Map<String,String>> handleMethodArgumentNotValid(MethodArgumentNotValidException e) {
         String msg = "Dữ liệu không hợp lệ.";
-        if (e.getBindingResult().getFieldError() != null && e.getBindingResult().getFieldError().getDefaultMessage() != null) {
-            msg = e.getBindingResult().getFieldError().getField() + ": " + e.getBindingResult().getFieldError().getDefaultMessage();
+        var fieldErrors = e.getBindingResult().getFieldErrors();
+        if (!fieldErrors.isEmpty()) {
+            var fieldError = fieldErrors.get(0);
+            var defaultMessage = fieldError.getDefaultMessage();
+            if (defaultMessage != null) {
+                msg = fieldError.getField() + ": " + defaultMessage;
+            }
         }
         return ResponseEntity.badRequest().body(Map.of("message", msg));
     }

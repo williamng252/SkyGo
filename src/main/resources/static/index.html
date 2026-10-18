@@ -1053,22 +1053,29 @@
         </div>
         <div class="form-row-2col">
           <div class="form-group">
+            <label>Ngày Khởi Hành</label>
+            <input type="date" id="ef-depart-date" required>
+          </div>
+          <div class="form-group">
             <label>Giờ Khởi Hành</label>
             <input type="time" id="ef-depart-time" required>
           </div>
+        </div>
+        <div class="form-row-2col">
           <div class="form-group">
             <label>Giờ Đến</label>
             <input type="time" id="ef-arrive-time" required>
           </div>
-        </div>
-        <div class="form-group">
-          <label>Giá Vé (VND)</label>
-          <input type="number" id="ef-price" required min="0">
+          <div class="form-group">
+            <label>Giá Vé (VND)</label>
+            <input type="number" id="ef-price" required min="0">
+          </div>
         </div>
         <div class="form-group">
           <label>Trạng Thái</label>
           <select id="ef-status">
             <option value="selling">Đang Bán</option>
+            <option value="delayed">Delay</option>
             <option value="checkin">Check-in</option>
             <option value="boarding">Boarding</option>
             <option value="departed">Đã Bay</option>

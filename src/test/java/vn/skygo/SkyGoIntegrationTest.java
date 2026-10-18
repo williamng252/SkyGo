@@ -223,7 +223,7 @@ class SkyGoIntegrationTest {
 
         Requests.FlightUpsert flightUpsert = new Requests.FlightUpsert(
             testFlightCode, "SG999", "SGN", "HAN", dep, arr,
-            new BigDecimal("1500000"), new BigDecimal("150000"), "SCHEDULED"
+            new BigDecimal("1500000"), new BigDecimal("150000"), "SCHEDULED", "A320"
         );
 
         flightService.createFlight(flightUpsert);
