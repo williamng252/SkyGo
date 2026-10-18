@@ -11,7 +11,7 @@ spring:
     hikari:
       connection-timeout: 30000
       minimum-idle: 1
-      maximum-pool-size: 1
+      maximum-pool-size: 5
   jackson:
     default-property-inclusion: non_null
   web:
@@ -21,3 +21,4 @@ logging:
   level:
     vn.skygo: INFO
     com.zaxxer.hikari: WARN
+    com.microsoft.sqlserver.jdbc: ERROR

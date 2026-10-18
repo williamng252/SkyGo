@@ -36,19 +36,75 @@ class SkyGoIntegrationTest {
         System.out.println("Airports count: " + airports.size());
     }
 
+    @Autowired
+    private org.springframework.jdbc.core.JdbcTemplate jdbcTemplate;
+
     @Test
     void testLoginDemoAccounts() {
-        // Customer login
+        // Customer login by email
         Map<String, Object> customer = authService.login(new Requests.Login("quan@example.com", "SkyGoDemo123!"));
         assertNotNull(customer.get("token"));
         assertEquals("user", customer.get("role"));
-        System.out.println("Customer login OK: " + customer.get("fullName"));
+        System.out.println("Customer login by email OK: " + customer.get("fullName"));
 
-        // Admin login
+        // Customer login by username
+        Map<String, Object> customerByUsername = authService.login(new Requests.Login("quan_demo", "SkyGoDemo123!"));
+        assertNotNull(customerByUsername.get("token"));
+        assertEquals("user", customerByUsername.get("role"));
+        System.out.println("Customer login by username OK: " + customerByUsername.get("fullName"));
+
+        // Admin login by email
         Map<String, Object> admin = authService.login(new Requests.Login("admin@example.com", "SkyGoDemo123!"));
         assertNotNull(admin.get("token"));
         assertEquals("admin", admin.get("role"));
-        System.out.println("Admin login OK: " + admin.get("fullName"));
+        System.out.println("Admin login by email OK: " + admin.get("fullName"));
+
+        // Admin login by username
+        Map<String, Object> adminByUsername = authService.login(new Requests.Login("admin_demo", "SkyGoDemo123!"));
+        assertNotNull(adminByUsername.get("token"));
+        assertEquals("admin", adminByUsername.get("role"));
+        System.out.println("Admin login by username OK: " + adminByUsername.get("fullName"));
+
+        // Admin login by alias (admin@skygo.vn)
+        Map<String, Object> adminAlias = authService.login(new Requests.Login("admin@skygo.vn", "SkyGoDemo123!"));
+        assertNotNull(adminAlias.get("token"));
+        assertEquals("admin", adminAlias.get("role"));
+        System.out.println("Admin login by alias OK: " + adminAlias.get("fullName"));
+    }
+
+    @Test
+    void testAuthNegativeCases() {
+        // Wrong password
+        vn.skygo.api.ApiException exWrongPass = assertThrows(vn.skygo.api.ApiException.class, () ->
+            authService.login(new Requests.Login("quan@example.com", "WrongPassword!"))
+        );
+        assertEquals(org.springframework.http.HttpStatus.UNAUTHORIZED, exWrongPass.status());
+
+        // Non-existent account
+        vn.skygo.api.ApiException exNotFound = assertThrows(vn.skygo.api.ApiException.class, () ->
+            authService.login(new Requests.Login("notfound@example.com", "SkyGoDemo123!"))
+        );
+        assertEquals(org.springframework.http.HttpStatus.UNAUTHORIZED, exNotFound.status());
+
+        // Locked account (binh@example.com)
+        vn.skygo.api.ApiException exLocked = assertThrows(vn.skygo.api.ApiException.class, () ->
+            authService.login(new Requests.Login("binh@example.com", "SkyGoDemo123!"))
+        );
+        assertEquals(org.springframework.http.HttpStatus.FORBIDDEN, exLocked.status());
+    }
+
+    @Test
+    void testRegisterAndLoginFlow() {
+        String testEmail = "testuser_" + System.currentTimeMillis() + "@example.com";
+        String testPass = "Secret123!";
+        authService.register(new Requests.Register("Nguyen Van Test", testEmail, testPass, "0912345678"));
+
+        // Login with new user
+        Map<String, Object> loggedIn = authService.login(new Requests.Login(testEmail, testPass));
+        assertNotNull(loggedIn.get("token"));
+        assertEquals("user", loggedIn.get("role"));
+        assertEquals("Nguyen Van Test", loggedIn.get("fullName"));
+        System.out.println("Registered and logged in OK: " + loggedIn.get("fullName"));
     }
 
     @Test
@@ -78,6 +134,20 @@ class SkyGoIntegrationTest {
 
     @Test
     void testCheckinPrepareAndConfirm() {
+        // Ensure SG003 is within check-in window and satisfies CK_CHUYENBAY_ThoiGian (GioDenDuKien > GioCatCanh)
+        jdbcTemplate.update(
+            "UPDATE CHUYEN_BAY SET " +
+            "GioCatCanh = DATEADD(HOUR, 4, SYSUTCDATETIME()), " +
+            "GioDenDuKien = DATEADD(HOUR, 6, SYSUTCDATETIME()), " +
+            "MoCheckInLuc = DATEADD(HOUR, -12, DATEADD(HOUR, 4, SYSUTCDATETIME())), " +
+            "DongCheckInLuc = DATEADD(HOUR, -1, DATEADD(HOUR, 4, SYSUTCDATETIME())), " +
+            "TrangThai = 'SCHEDULED' WHERE MaChuyenBay = 'SG003'"
+        );
+
+        // Delete any existing check-in for Huy so the test can check in cleanly
+        jdbcTemplate.update("DELETE FROM CHECK_IN WHERE MaVe IN (SELECT v.MaVe FROM VE_CHUYEN_BAY v JOIN DON_DAT_VE d ON v.MaDonDatVe = d.MaDonDatVe JOIN HANH_KHACH h ON v.MaHanhKhach = h.MaHanhKhach WHERE d.MaPNR = 'JK56LM' AND h.HoTen LIKE '%Huy%')");
+        jdbcTemplate.update("UPDATE VE_CHUYEN_BAY SET TrangThai = 'ISSUED' WHERE MaDonDatVe = (SELECT MaDonDatVe FROM DON_DAT_VE WHERE MaPNR = 'JK56LM') AND MaHanhKhach = (SELECT MaHanhKhach FROM HANH_KHACH WHERE HoTen LIKE '%Huy%')");
+
         // Seed order JK56LM has Lan (already checked in) and Huy (not checked in)
         Map<String, Object> checkin = bookingService.prepareCheckin(new Requests.Checkin("JK56LM", "Pham"));
         assertNotNull(checkin);
@@ -99,6 +169,10 @@ class SkyGoIntegrationTest {
 
     @Test
     void testBookingCreationFlow() {
+        // Clean up previous test bookings for Tran Van Nam so seats are always available
+        jdbcTemplate.update("UPDATE VE_CHUYEN_BAY SET TrangThai = 'CANCELLED' WHERE MaDonDatVe IN (SELECT MaDonDatVe FROM DON_DAT_VE WHERE HoTenLienHe = 'TRAN VAN NAM')");
+        jdbcTemplate.update("UPDATE DON_DAT_VE SET TrangThai = 'CANCELLED' WHERE HoTenLienHe = 'TRAN VAN NAM'");
+
         Requests.Passenger pax = new Requests.Passenger("Tran", "Van Nam", LocalDate.of(1998, 5, 20), "MALE", "079098000999");
         Requests.Booking req = new Requests.Booking("SG101", null, List.of(pax), "VIETQR");
 
@@ -139,6 +213,11 @@ class SkyGoIntegrationTest {
     @Test
     void testAdminCreateAndStatusFlight() {
         String testFlightCode = "SG999";
+        // Clean up SG999 if it already exists from a previous run (delete in correct FK order)
+        jdbcTemplate.update("DELETE FROM GHE_CHUYEN_BAY WHERE MaChuyenBay = ?", testFlightCode);
+        jdbcTemplate.update("DELETE FROM HANG_VE_CHUYEN_BAY WHERE MaChuyenBay = ?", testFlightCode);
+        jdbcTemplate.update("DELETE FROM CHUYEN_BAY WHERE MaChuyenBay = ?", testFlightCode);
+
         LocalDateTime dep = LocalDateTime.now().plusDays(5).withHour(10).withMinute(0).withSecond(0).withNano(0);
         LocalDateTime arr = dep.plusHours(2);
 

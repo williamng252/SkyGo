@@ -9,7 +9,7 @@ import java.util.List;
 public final class Requests {
     private Requests() {}
     public record Register(@NotBlank String fullName, @Email String email, @NotBlank @Size(min=6) String password, String phone) {}
-    public record Login(@Email String email, @NotBlank String password) {}
+    public record Login(@jakarta.validation.constraints.NotBlank @com.fasterxml.jackson.annotation.JsonAlias({"username", "identifier"}) String email, @NotBlank String password) {}
     public record Passenger(@NotBlank String lastName, @NotBlank String firstName, LocalDate dateOfBirth, String gender, String documentNumber) {}
     public record Booking(@NotBlank String flightNumber, String returnFlightNumber, @NotEmpty List<@Valid Passenger> passengers, String paymentMethod) {}
     public record Checkin(@NotBlank String pnr, @NotBlank String lastName) {}

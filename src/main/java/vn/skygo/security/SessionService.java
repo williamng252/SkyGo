@@ -32,7 +32,7 @@ public class SessionService {
     }
     public Principal requireAdmin(HttpServletRequest request) {
         Principal p = requireUser(request);
-        if (!"ADMIN".equals(p.role())) throw new ApiException(HttpStatus.FORBIDDEN, "Chỉ quản trị viên được phép thực hiện thao tác này.");
+        if (p.role() == null || !"ADMIN".equalsIgnoreCase(p.role().trim())) throw new ApiException(HttpStatus.FORBIDDEN, "Chỉ quản trị viên được phép thực hiện thao tác này.");
         return p;
     }
 }

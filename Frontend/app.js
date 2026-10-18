@@ -1454,9 +1454,19 @@ function initModals() {
         const password = document.getElementById('login-password').value;
         const btn = document.getElementById('btn-login-submit');
 
-        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-        if (!emailRegex.test(email)) {
-            showToast('error', 'Email không hợp lệ', 'Vui lòng nhập đúng định dạng email (vd: name@domain.com).');
+        if (!email) {
+            showToast('error', 'Thiếu thông tin', 'Vui lòng nhập email hoặc tên đăng nhập.');
+            return;
+        }
+
+        if (email.includes('@')) {
+            const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+            if (!emailRegex.test(email)) {
+                showToast('error', 'Email không hợp lệ', 'Vui lòng nhập đúng định dạng email (vd: name@domain.com).');
+                return;
+            }
+        } else if (email.length < 3) {
+            showToast('error', 'Tên đăng nhập không hợp lệ', 'Tên đăng nhập phải có ít nhất 3 ký tự.');
             return;
         }
 

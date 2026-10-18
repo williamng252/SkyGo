@@ -19,6 +19,8 @@ public class AuthService {
     private final PasswordEncoder encoder;
     private final SessionService sessions;
 
+    private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(AuthService.class);
+
     public AuthService(JdbcTemplate jdbc, PasswordEncoder encoder, SessionService sessions) {
         this.jdbc = jdbc;
         this.encoder = encoder;
@@ -46,38 +48,80 @@ public class AuthService {
 
     public Map<String, Object> login(Requests.Login req) {
         String identifier = req.email().trim().toLowerCase();
-        List<Map<String, Object>> rows = jdbc.queryForList(
-            "EXEC dbo.usp_LayTaiKhoanDangNhap @TenDangNhap=?",
-            identifier
-        );
+        // Support README demo alias admin@skygo.vn
+        if ("admin@skygo.vn".equalsIgnoreCase(identifier)) {
+            identifier = "admin@example.com";
+        }
 
-        if (rows.isEmpty() || !encoder.matches(req.password(), (String) rows.get(0).get("MatKhauHash"))) {
+        List<Map<String, Object>> rows;
+        try {
+            rows = jdbc.queryForList(
+                "EXEC dbo.usp_LayTaiKhoanDangNhap @TenDangNhap=?",
+                identifier
+            );
+        } catch (DataAccessException ex) {
+            log.error("Database error while loading login account for {}: {}", identifier, ex.getMessage());
+            throw new ApiException(HttpStatus.SERVICE_UNAVAILABLE, "Không thể kết nối đến cơ sở dữ liệu để xác thực. Vui lòng thử lại.");
+        }
+
+        if (rows.isEmpty()) {
             throw new ApiException(HttpStatus.UNAUTHORIZED, "Email hoặc mật khẩu không đúng.");
         }
 
         Map<String, Object> account = rows.get(0);
-        if (!Boolean.TRUE.equals(account.get("TrangThai"))) {
+        String hash = account.get("MatKhauHash") != null ? account.get("MatKhauHash").toString() : "";
+        boolean matches = false;
+        try {
+            matches = !hash.isEmpty() && encoder.matches(req.password(), hash);
+        } catch (Exception ex) {
+            log.warn("Password match check failed for {}: {}", identifier, ex.getMessage());
+            matches = false;
+        }
+
+        if (!matches) {
+            throw new ApiException(HttpStatus.UNAUTHORIZED, "Email hoặc mật khẩu không đúng.");
+        }
+
+        Object trangThaiObj = account.get("TrangThai");
+        if (trangThaiObj == null) trangThaiObj = account.get("trangthai");
+        boolean isActive = Boolean.TRUE.equals(trangThaiObj) || (trangThaiObj instanceof Number n && n.intValue() == 1);
+        if (!isActive) {
             throw new ApiException(HttpStatus.FORBIDDEN, "Tài khoản đã bị khóa.");
         }
 
-        long accountId = ((Number) account.get("MaTK")).longValue();
-        Long customerId = account.get("MaKhachHang") == null ? null : ((Number) account.get("MaKhachHang")).longValue();
-        String role = (String) account.get("VaiTro");
-        String email = account.get("Email") != null ? (String) account.get("Email") : identifier;
+        Object maTK = account.get("MaTK");
+        if (maTK == null) maTK = account.get("matk");
+        long accountId = maTK instanceof Number n ? n.longValue() : 0L;
 
-        String fullName = "Quản trị viên";
+        Object maKH = account.get("MaKhachHang");
+        if (maKH == null) maKH = account.get("makhachhang");
+        Long customerId = maKH instanceof Number n ? n.longValue() : null;
+
+        Object roleObj = account.get("VaiTro");
+        if (roleObj == null) roleObj = account.get("vaitro");
+        String role = roleObj != null ? roleObj.toString().trim().toUpperCase() : "CUSTOMER";
+
+        Object emailObj = account.get("Email");
+        if (emailObj == null) emailObj = account.get("email");
+        String email = emailObj != null ? emailObj.toString().trim() : identifier;
+
+        String fullName = "ADMIN".equalsIgnoreCase(role) ? "Quản trị viên" : "Khách hàng";
         String phone = "";
 
         if (customerId != null) {
-            List<Map<String, Object>> profiles = jdbc.queryForList(
-                "EXEC dbo.usp_LayHoSoKhachHang @MaKhachHang=?",
-                customerId
-            );
-            if (!profiles.isEmpty()) {
-                Map<String, Object> profile = profiles.get(0);
-                if (profile.get("HoTen") != null) fullName = (String) profile.get("HoTen");
-                if (profile.get("SDT") != null) phone = (String) profile.get("SDT");
-                if (profile.get("Email") != null) email = (String) profile.get("Email");
+            try {
+                List<Map<String, Object>> profiles = jdbc.queryForList(
+                    "EXEC dbo.usp_LayHoSoKhachHang @MaKhachHang=?",
+                    customerId
+                );
+                if (!profiles.isEmpty()) {
+                    Map<String, Object> profile = profiles.get(0);
+                    if (profile.get("HoTen") != null) fullName = profile.get("HoTen").toString();
+                    if (profile.get("SDT") != null) phone = profile.get("SDT").toString();
+                    if (profile.get("Email") != null) email = profile.get("Email").toString();
+                }
+            } catch (Exception ex) {
+                log.warn("Could not load customer profile for customer ID {}: {}", customerId, ex.getMessage());
             }
         }
 
