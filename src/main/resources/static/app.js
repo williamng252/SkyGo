@@ -971,18 +971,23 @@ async function cancelBooking(pnr) {
         if (!res.ok) throw new Error(data.message || 'Không thể hủy đơn.');
         showToast('success', 'Đã hủy vé', `Mã đặt chỗ ${pnr} đã được cập nhật trên database.`);
         renderMyBookings();
+        // Update PNR result display if currently visible
+        const pnrDisplay = document.getElementById('pnr-result-display');
+        if (pnrDisplay && !pnrDisplay.classList.contains('hidden')) {
+            const badge = pnrDisplay.querySelector('.status-confirmed');
+            if (badge) {
+                badge.className = 'badge badge-departed';
+                badge.innerHTML = '<i class="fa-solid fa-ban"></i> CANCELLED';
+            }
+            const cancelBtn = pnrDisplay.querySelector('.btn-cancel-ticket');
+            if (cancelBtn) {
+                cancelBtn.outerHTML = '<span style="font-size:13px;color:var(--text-muted);font-style:italic;">(Vé này đã bị hủy)</span>';
+            }
+            const checkinBtn = pnrDisplay.querySelector('.btn-checkin-link');
+            if (checkinBtn) checkinBtn.remove();
+        }
         return;
     } catch (err) { showToast('error', 'Hủy vé thất bại', err.message); return; }
-    /* Legacy cache retained only so an already printed demo ticket can still open. */
-    const bookings = getStoredBookings();
-    const item = bookings.find(b => b.pnr === pnr);
-    if (item) {
-        item.status = 'CANCELLED';
-        saveBookingToStorage(item);
-        showToast('info', 'Đã hủy vé', `Mã đặt chỗ ${pnr} đã được chuyển sang trạng thái ĐÃ HỦY.`);
-        renderMyBookings();
-        displayPNRResult(item, true, item.passengerName);
-    }
 }
 
 function printTicketFromPNR(pnr) {
@@ -1061,6 +1066,7 @@ function displayPNRResult(data, isSuccess, lastName) {
     if (isSuccess) {
         display.classList.add('success');
         const isCancelled = data.status === 'CANCELLED';
+        const isEligibleForCheckin = (data.status === 'PAID' || data.status === 'CONFIRMED' || data.status === 'ISSUED') && !isCancelled;
         display.innerHTML = `
             <div class="pnr-result-header">
                 <div class="pnr-badge">${data.pnr}</div>
@@ -1094,10 +1100,14 @@ function displayPNRResult(data, isSuccess, lastName) {
                     <div class="pnr-field-value">${data.seat || 'Chưa chọn'}</div>
                 </div>
             </div>
-            <div style="margin-top:16px;display:flex;gap:10px;justify-content:flex-end;align-items:center;">
+            <div style="margin-top:16px;display:flex;gap:10px;justify-content:flex-end;align-items:center;flex-wrap:wrap;">
                 <button class="btn btn-outline btn-sm" onclick="printTicketFromPNR('${data.pnr}')">
                     <i class="fa-solid fa-print"></i> In Thẻ Lên Máy Bay
                 </button>
+                ${isEligibleForCheckin ? `
+                <button class="btn btn-accent btn-sm btn-checkin-link" onclick="goToOnlineCheckin('${data.pnr}', '${encodeURIComponent(lastName || '')}')">
+                    <i class="fa-solid fa-plane-circle-check"></i> Làm Thủ Tục Check-in
+                </button>` : ''}
                 ${!isCancelled ? `
                 <button class="btn-cancel-ticket" onclick="cancelBooking('${data.pnr}')">
                     <i class="fa-solid fa-ban"></i> Hủy Đặt Chỗ
@@ -1115,6 +1125,19 @@ function displayPNRResult(data, isSuccess, lastName) {
                 </div>
             </div>
         `;
+    }
+}
+
+function goToOnlineCheckin(pnr, encodedLastName) {
+    const lastName = decodeURIComponent(encodedLastName || '');
+    switchView('checkin');
+    const pnrInput = document.getElementById('checkin-pnr-input');
+    const lastNameInput = document.getElementById('checkin-lastname-input');
+    if (pnrInput) pnrInput.value = pnr;
+    if (lastNameInput && lastName) lastNameInput.value = lastName;
+    const form = document.getElementById('checkin-form');
+    if (form && pnr && lastName) {
+        form.dispatchEvent(new Event('submit', { cancelable: true, bubbles: true }));
     }
 }
 
@@ -1635,15 +1658,27 @@ function handleLoginSuccess(user, notify = true) {
     localStorage.setItem(STORAGE_USER_KEY, JSON.stringify(user));
     closeModal('modal-login');
 
-    document.getElementById('auth-buttons-guest').classList.add('hidden');
-    document.getElementById('auth-buttons-user').classList.remove('hidden');
-    document.getElementById('user-display-name').textContent = user.name.split(' ').slice(-1)[0];
+    document.getElementById('auth-buttons-guest')?.classList.add('hidden');
+    document.getElementById('auth-buttons-user')?.classList.remove('hidden');
+    
+    const displayName = user.name ? user.name.split(' ').slice(-1)[0] : 'Khách';
+    const nameEl = document.getElementById('user-display-name');
+    if (nameEl) {
+        nameEl.innerHTML = `${displayName} ${user.role === 'admin' ? '<span class="user-role-badge">ADMIN</span>' : ''}`;
+    }
 
     const adminLink = document.getElementById('nav-admin');
-    if (adminLink) adminLink.style.display = user.role === 'admin' ? '' : 'none';
+    if (adminLink) {
+        adminLink.style.display = user.role === 'admin' ? '' : 'none';
+    }
 
     if (notify) {
         showToast('success', 'Đăng nhập thành công!', `Chào mừng trở lại, ${user.name}!`);
+    }
+
+    if (user.role === 'admin' && currentView === 'admin') {
+        loadAdminFlights();
+        updateAdminMetrics();
     }
 }
 
@@ -1660,38 +1695,19 @@ function restoreUserSession() {
 }
 
 // ============================================================
-// 8. VIEW SWITCHER (Client ↔ Admin)
+// 8. VIEW SWITCHER (Multi-View: Home, PNR, Check-in, Admin)
 // ============================================================
 
 function initViewSwitcher() {
     const adminLink = document.getElementById('nav-admin');
-    if (adminLink) adminLink.style.display = 'none';
+    if (adminLink) adminLink.style.display = (currentUser && currentUser.role === 'admin') ? '' : 'none';
 
     document.querySelectorAll('.nav-link').forEach(link => {
         link.addEventListener('click', (e) => {
+            e.preventDefault();
             const view = link.dataset.view;
             if (!view) return;
-
-            if (view === 'admin') {
-                e.preventDefault();
-                if (!currentUser || currentUser.role !== 'admin') {
-                    showToast('warning', 'Không có quyền truy cập', 'Bạn cần đăng nhập bằng tài khoản admin.');
-                    openModal('modal-login');
-                    return;
-                }
-                switchView('admin');
-            } else {
-                switchView('client');
-                const href = link.getAttribute('href');
-                if (href && href.startsWith('#')) {
-                    const target = document.querySelector(href);
-                    if (target) setTimeout(() => target.scrollIntoView({ behavior: 'smooth' }), 50);
-                }
-            }
-
-            document.querySelectorAll('.nav-link').forEach(l => l.classList.remove('active'));
-            link.classList.add('active');
-
+            switchView(view);
             document.getElementById('main-nav')?.classList.remove('open');
             document.getElementById('hamburger-btn')?.classList.remove('open');
         });
@@ -1699,24 +1715,102 @@ function initViewSwitcher() {
 
     document.getElementById('logo-home-link')?.addEventListener('click', (e) => {
         e.preventDefault();
-        switchView('client');
-        document.getElementById('nav-booking')?.classList.add('active');
+        switchView('home');
     });
+
+    // Handle initial route via hash
+    window.addEventListener('hashchange', handleHashRouting);
+    handleHashRouting();
+
+    // Init popular routes clicks
+    initPopularRoutes();
 }
 
-function switchView(view) {
-    currentView = view;
-    const clientView = document.getElementById('client-view');
-    const adminView = document.getElementById('admin-view');
+function handleHashRouting() {
+    const hash = window.location.hash.replace('#', '').toLowerCase();
+    if (['home', 'pnr', 'checkin', 'admin'].includes(hash)) {
+        switchView(hash, false);
+    }
+}
+
+function switchView(view, updateHash = true) {
+    if (view === 'client') view = 'home';
 
     if (view === 'admin') {
-        clientView.classList.add('hidden');
-        adminView.classList.remove('hidden');
-        loadAdminFlights();
-    } else {
-        adminView.classList.add('hidden');
-        clientView.classList.remove('hidden');
+        if (!currentUser || currentUser.role !== 'admin') {
+            showToast('warning', 'Yêu cầu quyền Quản trị', 'Bạn cần đăng nhập bằng tài khoản Quản trị viên để truy cập trang này.');
+            openModal('modal-login');
+            return;
+        }
     }
+
+    currentView = view;
+    if (updateHash) {
+        history.replaceState(null, null, `#${view}`);
+    }
+
+    const views = {
+        home: document.getElementById('home-view'),
+        pnr: document.getElementById('pnr-view'),
+        checkin: document.getElementById('checkin-view'),
+        admin: document.getElementById('admin-view'),
+    };
+
+    Object.keys(views).forEach(key => {
+        const el = views[key];
+        if (el) {
+            if (key === view) {
+                el.classList.remove('hidden');
+            } else {
+                el.classList.add('hidden');
+            }
+        }
+    });
+
+    // Fallback for legacy client-view container if any
+    const legacyClient = document.getElementById('client-view');
+    if (legacyClient) {
+        if (view === 'admin') legacyClient.classList.add('hidden');
+        else legacyClient.classList.remove('hidden');
+    }
+
+    // Update active state on nav links
+    document.querySelectorAll('.nav-link').forEach(link => {
+        if (link.dataset.view === view) {
+            link.classList.add('active');
+        } else {
+            link.classList.remove('active');
+        }
+    });
+
+    if (view === 'admin') {
+        loadAdminFlights();
+        updateAdminMetrics();
+    }
+
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+function initPopularRoutes() {
+    document.querySelectorAll('.popular-route-card').forEach(card => {
+        card.addEventListener('click', () => {
+            const origin = card.dataset.origin;
+            const dest = card.dataset.dest;
+            if (!origin || !dest) return;
+
+            const originEl = document.getElementById('origin');
+            const destEl = document.getElementById('destination');
+            if (originEl) originEl.value = origin;
+            if (destEl) destEl.value = dest;
+
+            switchView('home');
+            showToast('info', 'Đã chọn tuyến bay', `${card.querySelector('.pr-route')?.textContent || origin + ' → ' + dest}`);
+            const searchForm = document.getElementById('flight-search-form');
+            if (searchForm) {
+                searchForm.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }
+        });
+    });
 }
 
 async function loadAdminFlights() {
@@ -2002,11 +2096,12 @@ function initUserMenu() {
         e.preventDefault();
         currentUser = null;
         localStorage.removeItem(STORAGE_USER_KEY);
-        document.getElementById('auth-buttons-user').classList.add('hidden');
-        document.getElementById('auth-buttons-guest').classList.remove('hidden');
-        document.getElementById('nav-admin').style.display = 'none';
+        document.getElementById('auth-buttons-user')?.classList.add('hidden');
+        document.getElementById('auth-buttons-guest')?.classList.remove('hidden');
+        const adminLink = document.getElementById('nav-admin');
+        if (adminLink) adminLink.style.display = 'none';
         dropdown?.classList.remove('show');
-        if (currentView === 'admin') switchView('client');
+        if (currentView === 'admin') switchView('home');
         showToast('info', 'Đã đăng xuất', 'Hẹn gặp lại bạn trên SkyGo!');
     });
 }

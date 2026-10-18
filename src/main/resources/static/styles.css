@@ -2551,6 +2551,301 @@ img {
 }
 
 /* ============================================================
+   MULTI-VIEW ARCHITECTURE STYLES
+   ============================================================ */
+.view-panel {
+    animation: fadeIn 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+    min-height: calc(100vh - 68px - 180px);
+}
+
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(12px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+/* Dedicated View Hero Banners */
+.view-hero {
+    background: linear-gradient(135deg, var(--navy) 0%, var(--navy-mid) 100%);
+    color: var(--text-white);
+    padding: 44px 0 36px;
+    margin-bottom: 24px;
+    border-radius: 0 0 var(--radius-xl) var(--radius-xl);
+    box-shadow: var(--shadow-md);
+}
+
+.view-hero-title {
+    font-size: 28px;
+    font-weight: 800;
+    letter-spacing: -0.5px;
+    margin-bottom: 8px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.view-hero-title i {
+    color: var(--accent);
+}
+
+.view-hero-subtitle {
+    font-size: 15px;
+    color: rgba(255, 255, 255, 0.85);
+    max-width: 650px;
+    line-height: 1.5;
+}
+
+/* Check-in Steps Guide */
+.checkin-steps-bar {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 16px;
+    margin-bottom: 24px;
+}
+
+.checkin-step-card {
+    background: var(--surface);
+    border: 1.5px solid var(--border);
+    border-radius: var(--radius);
+    padding: 16px 20px;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    box-shadow: var(--shadow-xs);
+    transition: var(--transition);
+}
+
+.checkin-step-card:hover {
+    border-color: var(--accent);
+    box-shadow: var(--shadow-sm);
+}
+
+.checkin-step-num {
+    width: 32px;
+    height: 32px;
+    background: var(--navy);
+    color: #fff;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 700;
+    font-size: 14px;
+    flex-shrink: 0;
+}
+
+.checkin-step-info strong {
+    display: block;
+    font-size: 14px;
+    color: var(--navy);
+}
+
+.checkin-step-info span {
+    font-size: 12px;
+    color: var(--text-muted);
+}
+
+/* Popular Destinations & Features on Home View */
+.section-showcase {
+    margin: 45px 0 30px;
+}
+
+.section-showcase-title {
+    font-size: 22px;
+    font-weight: 800;
+    color: var(--navy);
+    margin-bottom: 6px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.section-showcase-title i {
+    color: var(--accent);
+}
+
+.section-showcase-desc {
+    font-size: 14px;
+    color: var(--text-muted);
+    margin-bottom: 20px;
+}
+
+.features-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    gap: 20px;
+}
+
+.feature-box {
+    background: var(--surface);
+    border-radius: var(--radius-lg);
+    padding: 24px 20px;
+    border: 1px solid var(--border);
+    box-shadow: var(--shadow-xs);
+    transition: var(--transition);
+}
+
+.feature-box:hover {
+    transform: translateY(-4px);
+    box-shadow: var(--shadow-md);
+    border-color: var(--navy-mid);
+}
+
+.feature-box-icon {
+    width: 48px;
+    height: 48px;
+    border-radius: var(--radius);
+    background: var(--accent-light);
+    color: var(--accent);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 22px;
+    margin-bottom: 16px;
+}
+
+.feature-box h4 {
+    font-size: 16px;
+    font-weight: 700;
+    color: var(--navy);
+    margin-bottom: 8px;
+}
+
+.feature-box p {
+    font-size: 13.5px;
+    color: var(--text-muted);
+    line-height: 1.5;
+}
+
+.popular-routes-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+    gap: 18px;
+}
+
+.popular-route-card {
+    background: var(--surface);
+    border-radius: var(--radius-lg);
+    padding: 20px;
+    border: 1px solid var(--border);
+    box-shadow: var(--shadow-xs);
+    cursor: pointer;
+    transition: var(--transition);
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+}
+
+.popular-route-card:hover {
+    transform: translateY(-3px);
+    box-shadow: var(--shadow-md);
+    border-color: var(--accent);
+}
+
+.pr-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 12px;
+}
+
+.pr-route {
+    font-size: 16px;
+    font-weight: 700;
+    color: var(--navy);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.pr-route i {
+    color: var(--accent);
+    font-size: 12px;
+}
+
+.pr-badge {
+    background: var(--surface-2);
+    font-size: 11px;
+    padding: 3px 8px;
+    border-radius: 20px;
+    color: var(--text-muted);
+    font-weight: 600;
+}
+
+.pr-price-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-end;
+    margin-top: 10px;
+    padding-top: 10px;
+    border-top: 1px dashed var(--border);
+}
+
+.pr-price-label {
+    font-size: 12px;
+    color: var(--text-muted);
+}
+
+.pr-price {
+    font-size: 16px;
+    font-weight: 800;
+    color: var(--accent);
+}
+
+/* FAQ Hints Cards */
+.faq-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    gap: 16px;
+    margin-top: 24px;
+}
+
+.faq-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 18px 20px;
+}
+
+.faq-card h4 {
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--navy);
+    margin-bottom: 6px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.faq-card h4 i {
+    color: var(--accent);
+}
+
+.faq-card p {
+    font-size: 13px;
+    color: var(--text-muted);
+    line-height: 1.5;
+}
+
+/* Role badge */
+.user-role-badge {
+    display: inline-block;
+    padding: 2px 6px;
+    background: var(--accent);
+    color: #fff;
+    font-size: 10px;
+    font-weight: 700;
+    border-radius: 4px;
+    margin-left: 6px;
+    text-transform: uppercase;
+}
+
+/* ============================================================
    PRINT MEDIA QUERY (@media print)
    ============================================================ */
 @media print {
@@ -2567,7 +2862,10 @@ img {
     .hero-section,
     .search-card,
     .results-section,
-    .card-section,
+    .view-hero,
+    .checkin-steps-bar,
+    .section-showcase,
+    .faq-grid,
     .admin-header,
     .admin-table-card,
     .metrics-grid,
@@ -2577,7 +2875,8 @@ img {
     .confirmation-header,
     #toast-container,
     .btn,
-    button {
+    button,
+    form {
         display: none !important;
     }
 
@@ -2597,6 +2896,14 @@ img {
         width: 100% !important;
     }
 
+    .card-section,
+    .result-display {
+        background: transparent !important;
+        box-shadow: none !important;
+        padding: 0 !important;
+        border: none !important;
+    }
+
     .boarding-pass {
         border: 2px dashed #333 !important;
         box-shadow: none !important;
@@ -2605,6 +2912,7 @@ img {
         background: #fff !important;
         color: #000 !important;
         max-width: 650px !important;
+        display: block !important;
     }
 
     .bp-top {

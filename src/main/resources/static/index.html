@@ -32,16 +32,16 @@
       </button>
 
       <nav class="nav-links" id="main-nav">
-        <a href="#search-section" class="nav-link active" id="nav-booking" data-view="client">
+        <a href="#home" class="nav-link active" id="nav-booking" data-view="home">
           <i class="fa-solid fa-ticket"></i> Đặt vé
         </a>
-        <a href="#pnr-section" class="nav-link" id="nav-pnr" data-view="client">
+        <a href="#pnr" class="nav-link" id="nav-pnr" data-view="pnr">
           <i class="fa-solid fa-magnifying-glass"></i> Tra cứu PNR
         </a>
-        <a href="#checkin-section" class="nav-link" id="nav-checkin" data-view="client">
+        <a href="#checkin" class="nav-link" id="nav-checkin" data-view="checkin">
           <i class="fa-solid fa-circle-check"></i> Check-in Online
         </a>
-        <a href="#" class="nav-link" id="nav-admin" data-view="admin">
+        <a href="#admin" class="nav-link" id="nav-admin" data-view="admin" style="display: none;">
           <i class="fa-solid fa-gauge-high"></i> Quản trị
         </a>
       </nav>
@@ -73,8 +73,8 @@
     </div>
   </header>
 
-  <!-- ===== MAIN CLIENT VIEW ===== -->
-  <main id="client-view">
+  <!-- ===== VIEW 1: HOME & FLIGHT SEARCH ===== -->
+  <main id="home-view" class="view-panel">
     <div class="container">
 
       <!-- Hero & Search Section -->
@@ -194,24 +194,117 @@
         <div id="flight-results-list" class="results-list"></div>
       </section>
 
+      <!-- Why Choose SkyGo Section -->
+      <section class="section-showcase">
+        <h3 class="section-showcase-title"><i class="fa-solid fa-shield-halved"></i> Trải Nghiệm Khác Biệt Cùng SkyGo</h3>
+        <p class="section-showcase-desc">Cam kết mang lại những chuyến bay an toàn, đúng giờ và dịch vụ khách hàng tận tâm nhất.</p>
+        <div class="features-grid">
+          <div class="feature-box">
+            <div class="feature-box-icon"><i class="fa-solid fa-plane-shield"></i></div>
+            <h4>An Toàn Tuyệt Đối</h4>
+            <p>Đội tàu bay đạt chuẩn an toàn quốc tế, kiểm tra kỹ thuật định kỳ nghiêm ngặt trước mỗi hành trình.</p>
+          </div>
+          <div class="feature-box">
+            <div class="feature-box-icon"><i class="fa-solid fa-tags"></i></div>
+            <h4>Giá Vé Minh Bạch</h4>
+            <p>Giá vé hiển thị đã bao gồm thuế phí, không phụ phí ẩn, tích hợp nhiều mã ưu đãi hấp dẫn.</p>
+          </div>
+          <div class="feature-box">
+            <div class="feature-box-icon"><i class="fa-solid fa-bolt"></i></div>
+            <h4>Check-in Nhanh Chóng</h4>
+            <p>Tự làm thủ tục và chọn chỗ ngồi ưa thích trực tuyến chỉ trong vài thao tác, nhận Boarding Pass tức thì.</p>
+          </div>
+          <div class="feature-box">
+            <div class="feature-box-icon"><i class="fa-solid fa-headset"></i></div>
+            <h4>Hỗ Trợ 24/7</h4>
+            <p>Đội ngũ chuyên viên chăm sóc khách hàng luôn sẵn sàng giải đáp thắc mắc và hỗ trợ thay đổi lịch trình.</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- Popular Flight Routes Showcase -->
+      <section class="section-showcase">
+        <h3 class="section-showcase-title"><i class="fa-solid fa-fire"></i> Chặng Bay Phổ Biến Nhất</h3>
+        <p class="section-showcase-desc">Khám phá các tuyến bay trọng điểm với mức giá ưu đãi đặc biệt hôm nay.</p>
+        <div class="popular-routes-grid">
+          <div class="popular-route-card" data-origin="SGN" data-dest="HAN">
+            <div class="pr-header">
+              <span class="pr-route">TP. Hồ Chí Minh <i class="fa-solid fa-arrow-right"></i> Hà Nội</span>
+              <span class="pr-badge">Hot</span>
+            </div>
+            <p style="font-size:13px;color:var(--text-muted);margin-bottom:8px;">Chuyến bay thẳng &bull; 2h 10m</p>
+            <div class="pr-price-row">
+              <span class="pr-price-label">Giá chỉ từ</span>
+              <span class="pr-price">1.450.000 VND</span>
+            </div>
+          </div>
+          <div class="popular-route-card" data-origin="HAN" data-dest="DAD">
+            <div class="pr-header">
+              <span class="pr-route">Hà Nội <i class="fa-solid fa-arrow-right"></i> Đà Nẵng</span>
+              <span class="pr-badge">Ưu đãi</span>
+            </div>
+            <p style="font-size:13px;color:var(--text-muted);margin-bottom:8px;">Chuyến bay thẳng &bull; 1h 20m</p>
+            <div class="pr-price-row">
+              <span class="pr-price-label">Giá chỉ từ</span>
+              <span class="pr-price">870.000 VND</span>
+            </div>
+          </div>
+          <div class="popular-route-card" data-origin="SGN" data-dest="DAD">
+            <div class="pr-header">
+              <span class="pr-route">TP. Hồ Chí Minh <i class="fa-solid fa-arrow-right"></i> Đà Nẵng</span>
+              <span class="pr-badge">Phổ biến</span>
+            </div>
+            <p style="font-size:13px;color:var(--text-muted);margin-bottom:8px;">Chuyến bay thẳng &bull; 1h 25m</p>
+            <div class="pr-price-row">
+              <span class="pr-price-label">Giá chỉ từ</span>
+              <span class="pr-price">980.000 VND</span>
+            </div>
+          </div>
+          <div class="popular-route-card" data-origin="SGN" data-dest="PQC">
+            <div class="pr-header">
+              <span class="pr-route">TP. Hồ Chí Minh <i class="fa-solid fa-arrow-right"></i> Phú Quốc</span>
+              <span class="pr-badge">Nghỉ dưỡng</span>
+            </div>
+            <p style="font-size:13px;color:var(--text-muted);margin-bottom:8px;">Chuyến bay thẳng &bull; 1h 00m</p>
+            <div class="pr-price-row">
+              <span class="pr-price-label">Giá chỉ từ</span>
+              <span class="pr-price">1.050.000 VND</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+    </div><!-- /.container -->
+  </main>
+
+  <!-- ===== VIEW 2: PNR LOOKUP ===== -->
+  <main id="pnr-view" class="view-panel hidden">
+    <div class="view-hero">
+      <div class="container">
+        <h1 class="view-hero-title"><i class="fa-solid fa-ticket"></i> Tra Cứu Đặt Chỗ (PNR)</h1>
+        <p class="view-hero-subtitle">Xem chi tiết lịch trình, xác minh tình trạng thanh toán, in thẻ lên máy bay hoặc quản lý hủy vé trực tuyến.</p>
+      </div>
+    </div>
+
+    <div class="container">
       <!-- PNR Lookup Section -->
-      <section id="pnr-section" class="card-section">
+      <section id="pnr-section" class="card-section" style="margin-top:0;">
         <div class="section-header">
-          <div class="section-icon"><i class="fa-solid fa-ticket"></i></div>
+          <div class="section-icon"><i class="fa-solid fa-magnifying-glass"></i></div>
           <div>
-            <h2>Tra Cứu Mã Đặt Chỗ (PNR)</h2>
-            <p class="section-subtitle">Nhập mã PNR và họ hành khách để xem thông tin đặt chỗ</p>
+            <h2>Nhập Thông Tin Tra Cứu</h2>
+            <p class="section-subtitle">Vui lòng nhập chính xác mã đặt chỗ 6-10 ký tự và họ của hành khách</p>
           </div>
         </div>
 
         <form id="pnr-form" class="inline-form">
           <div class="input-icon-wrap">
             <i class="fa-solid fa-hashtag input-icon"></i>
-            <input type="text" id="pnr-code-input" placeholder="Mã PNR (VD: SG1234)" required maxlength="10">
+            <input type="text" id="pnr-code-input" placeholder="Mã PNR (VD: SG1234)" required maxlength="10" style="text-transform:uppercase;">
           </div>
           <div class="input-icon-wrap">
             <i class="fa-solid fa-user input-icon"></i>
-            <input type="text" id="pnr-lastname-input" placeholder="Họ hành khách (VD: NGUYEN)" required>
+            <input type="text" id="pnr-lastname-input" placeholder="Họ hành khách (VD: NGUYEN)" required style="text-transform:uppercase;">
           </div>
           <button type="submit" class="btn btn-primary" id="btn-pnr-search">
             <i class="fa-solid fa-search"></i> Tra cứu
@@ -221,24 +314,77 @@
         <div id="pnr-result-display" class="result-display hidden"></div>
       </section>
 
-      <!-- Check-in Online Section -->
-      <section id="checkin-section" class="card-section">
+      <!-- PNR Guidance & FAQ -->
+      <div class="faq-grid">
+        <div class="faq-card">
+          <h4><i class="fa-solid fa-circle-question"></i> Mã PNR lấy ở đâu?</h4>
+          <p>Mã PNR (Passenger Name Record) gồm 6-10 ký tự được cấp ngay sau khi bạn đặt vé thành công và gửi về email xác nhận của bạn.</p>
+        </div>
+        <div class="faq-card">
+          <h4><i class="fa-solid fa-ban"></i> Quy định hủy vé</h4>
+          <p>Bạn có thể hủy vé trực tuyến trước giờ khởi hành tối thiểu 24 giờ. Hệ thống sẽ cập nhật trạng thái hủy ngay lập tức trên CSDL.</p>
+        </div>
+        <div class="faq-card">
+          <h4><i class="fa-solid fa-id-card"></i> Thông tin hành khách</h4>
+          <p>Vui lòng đảm bảo họ tên hành khách trùng khớp với giấy tờ tùy thân (CCCD/Hộ chiếu) khi làm thủ tục lên máy bay.</p>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <!-- ===== VIEW 3: ONLINE CHECK-IN ===== -->
+  <main id="checkin-view" class="view-panel hidden">
+    <div class="view-hero" style="background:linear-gradient(135deg, #0b1930 0%, #1e3a6a 100%);">
+      <div class="container">
+        <h1 class="view-hero-title"><i class="fa-solid fa-circle-check"></i> Check-in Trực Tuyến</h1>
+        <p class="view-hero-subtitle">Chủ động làm thủ tục, chọn chỗ ngồi ưng ý trên sơ đồ máy bay và nhận thẻ lên tàu bay từ 24h trước chuyến bay.</p>
+      </div>
+    </div>
+
+    <div class="container">
+      <!-- 3 Steps Visual Guide -->
+      <div class="checkin-steps-bar">
+        <div class="checkin-step-card">
+          <div class="checkin-step-num">1</div>
+          <div class="checkin-step-info">
+            <strong>Tra cứu vé</strong>
+            <span>Nhập mã PNR &amp; Họ</span>
+          </div>
+        </div>
+        <div class="checkin-step-card">
+          <div class="checkin-step-num">2</div>
+          <div class="checkin-step-info">
+            <strong>Chọn ghế ngồi</strong>
+            <span>Xem sơ đồ trực quan</span>
+          </div>
+        </div>
+        <div class="checkin-step-card">
+          <div class="checkin-step-num">3</div>
+          <div class="checkin-step-info">
+            <strong>Nhận Boarding Pass</strong>
+            <span>Lưu hoặc in thẻ bay</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Check-in Online Form Section -->
+      <section id="checkin-section" class="card-section" style="margin-top:0;">
         <div class="section-header">
           <div class="section-icon accent"><i class="fa-solid fa-plane-circle-check"></i></div>
           <div>
-            <h2>Làm Thủ Tục Trực Tuyến (Check-in)</h2>
-            <p class="section-subtitle">Check-in online từ 24 giờ trước giờ khởi hành</p>
+            <h2>Bắt Đầu Làm Thủ Tục</h2>
+            <p class="section-subtitle">Hệ thống mở check-in từ 24 giờ đến 60 phút trước giờ khởi hành dự kiến</p>
           </div>
         </div>
 
         <form id="checkin-form" class="inline-form">
           <div class="input-icon-wrap">
             <i class="fa-solid fa-hashtag input-icon"></i>
-            <input type="text" id="checkin-pnr-input" placeholder="Nhập mã PNR" required>
+            <input type="text" id="checkin-pnr-input" placeholder="Nhập mã PNR" required style="text-transform:uppercase;">
           </div>
           <div class="input-icon-wrap">
             <i class="fa-solid fa-user input-icon"></i>
-            <input type="text" id="checkin-lastname-input" placeholder="Họ hành khách" required>
+            <input type="text" id="checkin-lastname-input" placeholder="Họ hành khách" required style="text-transform:uppercase;">
           </div>
           <button type="submit" class="btn btn-accent" id="btn-checkin-submit">
             <i class="fa-solid fa-circle-check"></i> Thực hiện Check-in
@@ -248,11 +394,26 @@
         <div id="checkin-result-display" class="result-display hidden"></div>
       </section>
 
-    </div><!-- /.container -->
+      <!-- Checkin Note -->
+      <div class="faq-grid" style="margin-top:20px;">
+        <div class="faq-card">
+          <h4><i class="fa-solid fa-clock"></i> Khung giờ quy định</h4>
+          <p>Hệ thống chỉ cho phép check-in cho các chuyến bay trong khung thời gian từ 24h đến 1h trước giờ cất cánh.</p>
+        </div>
+        <div class="faq-card">
+          <h4><i class="fa-solid fa-chair"></i> Sơ đồ ghế thực tế</h4>
+          <p>Ghế màu trắng là ghế còn trống, ghế màu xám đã được hành khách khác đặt trước. Vui lòng chọn ghế trống phù hợp.</p>
+        </div>
+        <div class="faq-card">
+          <h4><i class="fa-solid fa-print"></i> Thẻ lên tàu bay điện tử</h4>
+          <p>Sau khi xác nhận chọn ghế thành công, thẻ lên tàu bay kèm mã QR sẽ được sinh ra, hỗ trợ in hoặc chụp lại màn hình.</p>
+        </div>
+      </div>
+    </div>
   </main>
 
-  <!-- ===== ADMIN DASHBOARD VIEW ===== -->
-  <main id="admin-view" class="hidden">
+  <!-- ===== VIEW 4: ADMIN DASHBOARD VIEW ===== -->
+  <main id="admin-view" class="view-panel hidden">
     <div class="container">
       <div class="admin-header">
         <div>
