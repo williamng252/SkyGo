@@ -40,6 +40,7 @@ const MOCK_PNR_DB = {};
 // ============================================================
 
 document.addEventListener('DOMContentLoaded', () => {
+    enhanceDateInputs();
     initPassengerSelector();
     initTripTypeToggle();
     initSearchForm();
@@ -169,7 +170,8 @@ function initSearchForm() {
             return;
         }
 
-        if (isRoundtrip && !returnDate) {
+        if (!validISODate(departDate) || departDate < todayISO()) { showToast('error', 'Ngày không hợp lệ', 'Chọn ngày đi theo dd/MM/yyyy, không trước hôm nay.'); return; }
+        if (isRoundtrip && !validISODate(returnDate)) {
             showToast('warning', 'Thiếu ngày về', 'Vui lòng chọn ngày về cho chuyến bay khứ hồi.');
             return;
         }
@@ -194,9 +196,9 @@ function initSearchForm() {
 
         const queryParams = new URLSearchParams({
             origin, destination, departDate,
-            adults: passengerState.adults,
-            children: passengerState.children,
-            infants: passengerState.infants
+            adults: passengerState.adults + passengerState.children + passengerState.infants,
+            children: 0,
+            infants: 0
         });
 
         try {
@@ -227,51 +229,10 @@ function renderFlightResults(flights) {
 }
 
 function renderOutboundFlightResults(flights) {
-    const section = document.getElementById('results-section');
-    const list = document.getElementById('flight-results-list');
-    const count = document.getElementById('results-count');
-
-    const titlePrefix = currentSearch.isRoundtrip ? 'Bước 1: Chọn Chuyến Đi' : 'Danh Sách Chuyến Bay';
-    count.innerHTML = `<strong>${titlePrefix}</strong> &bull; ${flights.length} chuyến phù hợp`;
-
-    list.innerHTML = flights.map(f => `
-        <div class="flight-card">
-            <div class="flight-info">
-                <div class="flight-airline">
-                    <strong>${f.airline || 'SkyGo Airways'}</strong>
-                    <div>${f.flightNumber}</div>
-                    <span class="badge badge-selling" style="font-size:11px;margin-top:4px;">Chiều đi</span>
-                </div>
-                <div class="flight-time">
-                    <div class="time">${f.departureTime}</div>
-                    <div class="airport">${f.origin}</div>
-                </div>
-                <div class="flight-arrow">
-                    <hr style="flex:1;border:none;border-top:1.5px dashed #cbd5e1">
-                    <i class="fa-solid fa-plane"></i>
-                    <hr style="flex:1;border:none;border-top:1.5px dashed #cbd5e1">
-                </div>
-                <div class="flight-time">
-                    <div class="time">${f.arrivalTime}</div>
-                    <div class="airport">${f.destination}</div>
-                </div>
-                <div class="flight-duration">
-                    <i class="fa-regular fa-clock"></i> ${f.duration || '2h 00m'}
-                </div>
-            </div>
-            <div class="flight-price-col">
-                <div class="flight-price">${Number(f.price).toLocaleString('vi-VN')} VND</div>
-                <div class="flight-price-label">/ người lớn</div>
-                <button class="btn btn-primary btn-sm" style="margin-top:10px;"
-                    onclick="handleSelectOutboundFlight(${JSON.stringify(f).replace(/"/g, '&quot;')})">
-                    ${currentSearch.isRoundtrip ? 'Chọn chiều đi <i class="fa-solid fa-arrow-right"></i>' : 'Chọn chuyến bay <i class="fa-solid fa-arrow-right"></i>'}
-                </button>
-            </div>
-        </div>
-    `).join('');
-
-    section.classList.remove('hidden');
-    section.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    document.getElementById('results-count').textContent = `${currentSearch.isRoundtrip ? 'Chọn chiều đi · ' : ''}${flights.length} chuyến phù hợp`;
+    document.getElementById('flight-results-list').innerHTML = flightCards(flights);
+    document.getElementById('results-section').classList.remove('hidden');
+    document.getElementById('results-section').scrollIntoView({behavior:'smooth'});
 }
 
 function handleSelectOutboundFlight(flight) {
@@ -288,94 +249,17 @@ function handleSelectOutboundFlight(flight) {
 }
 
 async function renderReturnFlightResults() {
-    const list = document.getElementById('flight-results-list');
-    const count = document.getElementById('results-count');
-    const out = currentSearch.selectedOutbound;
-
-    count.innerHTML = `<strong>Bước 2: Chọn Chuyến Bay Chiều Về</strong> &bull; Đang tìm...`;
-    list.innerHTML = `<div style="text-align:center;padding:48px 0;"><i class="fa-solid fa-spinner fa-spin" style="font-size:32px;color:var(--primary);"></i><p style="margin-top:12px;color:var(--text-muted);">Đang tải danh sách chuyến bay chiều về...</p></div>`;
-
-    const returnParams = new URLSearchParams({
-        origin: currentSearch.destination,
-        destination: currentSearch.origin,
-        departDate: currentSearch.returnDate,
-        adults: passengerState.adults,
-        children: passengerState.children,
-        infants: passengerState.infants
-    });
-
-    let returnOptions = [];
+    const query = new URLSearchParams({origin:currentSearch.destination, destination:currentSearch.origin,
+        departDate:currentSearch.returnDate, adults:passengerState.adults + passengerState.children + passengerState.infants});
     try {
-        const res = await fetch(`${API_BASE_URL}/flights/search?${returnParams}`);
-        if (res.ok) {
-            const data = await res.json();
-            if (Array.isArray(data)) returnOptions = data;
-        }
-    } catch (err) {
-        console.error('Error fetching return flights:', err);
-    }
-
-    count.innerHTML = `<strong>Bước 2: Chọn Chuyến Bay Chiều Về</strong> &bull; ${returnOptions.length} chuyến bay`;
-
-    let html = `
-        <div style="background:#f1f5f9;padding:12px 18px;border-radius:10px;margin-bottom:16px;display:flex;justify-content:space-between;align-items:center;">
-            <div>
-                <i class="fa-solid fa-circle-check" style="color:var(--success);margin-right:6px;"></i>
-                <strong>Đã chọn chiều đi:</strong> ${out.flightNumber} (${out.origin} → ${out.destination}) lúc ${out.departureTime || out.departTime}
-            </div>
-            <button class="btn btn-outline btn-sm" onclick="document.getElementById('flight-search-form').dispatchEvent(new Event('submit'))">
-                <i class="fa-solid fa-rotate-left"></i> Đổi chiều đi
-            </button>
-        </div>
-    `;
-
-    if (returnOptions.length === 0) {
-        html += `
-            <div style="text-align:center;padding:32px;background:#fff;border-radius:12px;border:1px dashed #cbd5e1;">
-                <i class="fa-solid fa-plane-slash" style="font-size:36px;color:var(--text-light);margin-bottom:8px;display:block;"></i>
-                <p style="font-weight:600;color:var(--text-muted);">Không tìm thấy chuyến bay chiều về cho ngày này.</p>
-            </div>
-        `;
-    } else {
-        html += returnOptions.map(f => `
-            <div class="flight-card" style="border-left: 4px solid var(--accent);">
-                <div class="flight-info">
-                    <div class="flight-airline">
-                        <strong>${f.airline || 'SkyGo Airways'}</strong>
-                        <div>${f.flightNumber}</div>
-                        <span class="badge badge-checkin" style="font-size:11px;margin-top:4px;">Chiều về</span>
-                    </div>
-                    <div class="flight-time">
-                        <div class="time">${f.departureTime || f.departTime}</div>
-                        <div class="airport">${f.origin}</div>
-                    </div>
-                    <div class="flight-arrow">
-                        <hr style="flex:1;border:none;border-top:1.5px dashed #cbd5e1">
-                        <i class="fa-solid fa-plane" style="transform:rotate(180deg);"></i>
-                        <hr style="flex:1;border:none;border-top:1.5px dashed #cbd5e1">
-                    </div>
-                    <div class="flight-time">
-                        <div class="time">${f.arrivalTime || f.arriveTime}</div>
-                        <div class="airport">${f.destination}</div>
-                    </div>
-                    <div class="flight-duration">
-                        <i class="fa-regular fa-clock"></i> ${f.duration || '2h 00m'}
-                    </div>
-                </div>
-                <div class="flight-price-col">
-                    <div class="flight-price">${Number(f.price).toLocaleString('vi-VN')} VND</div>
-                    <div class="flight-price-label">/ người lớn</div>
-                    <button class="btn btn-accent btn-sm" style="margin-top:10px;"
-                        onclick="handleSelectReturnFlight(${JSON.stringify(f).replace(/"/g, '&quot;')})">
-                        Chọn chiều về &amp; Đặt vé <i class="fa-solid fa-arrow-right"></i>
-                    </button>
-                </div>
-            </div>
-        `).join('');
-    }
-
-    list.innerHTML = html;
-    document.getElementById('results-section').scrollIntoView({ behavior: 'smooth', block: 'start' });
+        const res = await fetch(`${API_BASE_URL}/flights/search?${query}`);
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.message);
+        const flights = data.filter(f => f.departure > currentSearch.selectedOutbound.arrival);
+        document.getElementById('results-count').textContent = `Chọn chiều về · ${flights.length} chuyến phù hợp`;
+        document.getElementById('flight-results-list').innerHTML = `<p>Đã chọn chiều đi: ${escapeHtml(currentSearch.selectedOutbound.flightNumber)} · ${fareLabel(currentSearch.selectedOutbound.fareClass)} · ${displayDate(currentSearch.departDate)}</p>` +
+            (flights.length ? flightCards(flights, true) : '<p>Không có chuyến về phù hợp sau giờ đến của chiều đi.</p>');
+    } catch (err) { showToast('error','Lỗi tìm chiều về',err.message); }
 }
 
 function handleSelectReturnFlight(returnFlight) {
@@ -398,11 +282,18 @@ function renderNoFlightsFound() {
 }
 
 function setMinDepartDate() {
-    const today = new Date().toISOString().split('T')[0];
+    const today = todayISO();
     const d = document.getElementById('depart-date');
     const r = document.getElementById('return-date');
     if (d) d.min = today;
     if (r) r.min = today;
+    d?.addEventListener('change', () => {
+        r.min = d.value || today;
+        if (r.value && r.value < r.min) {
+            r.value = '';
+            r.dispatchEvent(new Event('change'));
+        }
+    });
 }
 
 // ============================================================
@@ -427,24 +318,10 @@ function openBookingModal(flight, returnFlight = null) {
         },
         selectedSeats: [],
         extras: { baggage: false, meal: false, priority: false },
-        totalPassengers: passengerState.adults + passengerState.children,
+        totalPassengers: passengerState.adults + passengerState.children + passengerState.infants,
     };
 
-    // Set summary text in header
-    const summary = document.getElementById('booking-flight-summary');
-    if (returnFlight) {
-        summary.innerHTML = `
-            <div><i class="fa-solid fa-plane"></i> Đi: ${flight.origin} &rarr; ${flight.destination} (${flight.flightNumber})</div>
-            <div><i class="fa-solid fa-plane-arrival"></i> Về: ${returnFlight.origin} &rarr; ${returnFlight.destination} (${returnFlight.flightNumber})</div>
-        `;
-    } else {
-        summary.innerHTML = `
-            <i class="fa-solid fa-plane"></i>
-            ${flight.origin} &rarr; ${flight.destination} &bull;
-            ${flight.flightNumber} &bull;
-            ${Number(flight.price).toLocaleString('vi-VN')} VND
-        `;
-    }
+    document.getElementById('booking-flight-summary').innerHTML = bookingSummaryHTML();
 
     // Build Step 1 passenger forms
     buildPassengerForms();
@@ -477,6 +354,7 @@ function buildPassengerForms() {
     }
 
     container.innerHTML = forms.join('');
+    enhanceDateInputs(container);
 }
 
 function buildOnePassengerForm(num, typeLabel, type, idx) {
@@ -499,7 +377,7 @@ function buildOnePassengerForm(num, typeLabel, type, idx) {
                 ${type !== 'infant' ? `
                 <div class="form-group">
                     <label>Ngày sinh</label>
-                    <input type="date" id="pax-${idx}-dob">
+                    <input type="date" id="pax-${idx}-dob" required max="${todayISO()}">
                 </div>
                 <div class="form-group">
                     <label>CCCD / Hộ chiếu</label>
@@ -508,7 +386,7 @@ function buildOnePassengerForm(num, typeLabel, type, idx) {
                 ` : `
                 <div class="form-group">
                     <label>Ngày sinh</label>
-                    <input type="date" id="pax-${idx}-dob">
+                    <input type="date" id="pax-${idx}-dob" required max="${todayISO()}">
                 </div>
                 <div class="form-group">
                     <label>Giới tính</label>
@@ -526,6 +404,12 @@ function buildOnePassengerForm(num, typeLabel, type, idx) {
 function validatePassengerForms() {
     const total = bookingState.passengers.adults + bookingState.passengers.children + bookingState.passengers.infants;
     for (let i = 0; i < total; i++) {
+        const dob = document.getElementById(`pax-${i}-dob`);
+        if (!validISODate(dob.value) || dob.value > todayISO()) {
+            showToast('error','Ngày sinh không hợp lệ',`Hành khách ${i + 1}: nhập ngày sinh theo dd/MM/yyyy, không ở tương lai.`);
+            document.getElementById(`pax-${i}-dob-display`).focus();
+            return false;
+        }
         const last = document.getElementById(`pax-${i}-lastname`);
         const first = document.getElementById(`pax-${i}-firstname`);
         if (!last || !first || !last.value.trim() || !first.value.trim()) {
@@ -591,10 +475,6 @@ document.addEventListener('click', (e) => {
     }
     if (e.target.id === 'step2-back' || e.target.closest('#step2-back')) goToStep(1);
     if (e.target.id === 'step2-next' || e.target.closest('#step2-next')) {
-        if (bookingState.selectedSeats.length < bookingState.totalPassengers) {
-            showToast('warning', 'Chưa chọn ghế', `Vui lòng chọn ${bookingState.totalPassengers} ghế trước khi tiếp tục.`);
-            return;
-        }
         goToStep(3);
     }
     if (e.target.id === 'step3-back' || e.target.closest('#step3-back')) goToStep(2);
@@ -609,45 +489,7 @@ document.addEventListener('click', (e) => {
 const TAKEN_SEATS = ['1A', '1B', '2C', '3D', '4A', '4F', '5B', '5C', '6E', '7A', '8D', '9B', '10F', '11C', '12B', '13A', '15D', '16E'];
 
 function buildSeatMap() {
-    const map = document.getElementById('seat-map');
-    if (!map) return;
-
-    const rows = 18;
-    const cols = ['A', 'B', 'C', 'D', 'E', 'F'];
-    let html = '';
-
-    // Column header
-    html += `<div class="seat-row">
-        <div class="row-number"></div>
-        ${cols.slice(0, 3).map(c => `<div style="width:34px;text-align:center;font-size:10px;font-weight:600;color:var(--text-muted);">${c}</div>`).join('')}
-        <div class="aisle"></div>
-        ${cols.slice(3).map(c => `<div style="width:34px;text-align:center;font-size:10px;font-weight:600;color:var(--text-muted);">${c}</div>`).join('')}
-    </div>`;
-
-    for (let r = 1; r <= rows; r++) {
-        html += `<div class="seat-row"><div class="row-number">${r}</div>`;
-        cols.forEach((col, ci) => {
-            const seatId = `${r}${col}`;
-            const isTaken = TAKEN_SEATS.includes(seatId);
-            const isSelected = bookingState.selectedSeats.includes(seatId);
-
-            let cls = 'seat';
-            if (isTaken) cls += ' taken';
-            if (isSelected) cls += ' selected';
-
-            html += `<div class="${cls}" data-seat="${seatId}">${seatId}</div>`;
-
-            if (ci === 2) html += `<div class="aisle"></div>`;
-        });
-        html += `</div>`;
-    }
-
-    map.innerHTML = html;
-
-    // Seat click events
-    map.querySelectorAll('.seat:not(.taken)').forEach(seat => {
-        seat.addEventListener('click', () => toggleSeat(seat));
-    });
+    document.getElementById('seat-map').innerHTML = '<p>Ghế được chọn riêng cho từng hành khách và từng chặng khi làm thủ tục check-in.</p>';
 }
 
 function toggleSeat(el) {
@@ -671,6 +513,7 @@ function toggleSeat(el) {
 // -------- Extras --------
 
 document.addEventListener('change', (e) => {
+    if (!bookingState.extras) return;
     if (e.target.id === 'extra-baggage') bookingState.extras.baggage = e.target.checked;
     if (e.target.id === 'extra-meal') bookingState.extras.meal = e.target.checked;
     if (e.target.id === 'extra-priority') bookingState.extras.priority = e.target.checked;
@@ -696,73 +539,13 @@ document.addEventListener('change', (e) => {
 // -------- Fare Summary --------
 
 function buildFareSummary() {
-    const { flight, returnFlight, passengers, extras, totalPassengers } = bookingState;
-    const outboundBasePrice = flight.price || 0;
-    const returnBasePrice = returnFlight ? (returnFlight.price || 0) : 0;
-    const legPrice = outboundBasePrice + returnBasePrice;
-
-    // Adult 100%, Child 75%, Infant 10%
-    const adultFare = passengers.adults * legPrice;
-    const childFare = passengers.children * Math.round(legPrice * 0.75);
-    const infantFare = passengers.infants * Math.round(legPrice * 0.10);
-
-    const subtotal = adultFare + childFare + infantFare;
-
-    const extraCost = (extras.baggage ? 250000 : 0)
-        + (extras.meal ? 150000 : 0)
-        + (extras.priority ? 100000 : 0);
-
-    const extras_total = extraCost * totalPassengers;
-    const tax = Math.round((subtotal + extras_total) * 0.1);
-
-    let discount = 0;
-    if (appliedVoucher) {
-        if (appliedVoucher.type === 'percent') {
-            discount = Math.round(subtotal * (appliedVoucher.value / 100));
-        } else if (appliedVoucher.type === 'fixed') {
-            discount = appliedVoucher.value;
-        }
-    }
-
-    const total = Math.max(0, subtotal + tax + extras_total - discount);
+    const flights = [bookingState.flight, bookingState.returnFlight].filter(Boolean);
+    const total = flights.reduce((sum, f) => sum + Number(f.price), 0) * bookingState.totalPassengers;
     bookingState.totalAmount = total;
-    bookingState.subtotal = subtotal;
-    bookingState.tax = tax;
-    bookingState.discount = discount;
-
-    const fareEl = document.getElementById('fare-summary');
-    fareEl.innerHTML = `
-        <h5>Tóm Tắt Chi Phí</h5>
-        <div class="fare-row">
-            <span>Người lớn (${passengers.adults}x)</span>
-            <span>${adultFare.toLocaleString('vi-VN')} VND</span>
-        </div>
-        ${passengers.children > 0 ? `
-        <div class="fare-row">
-            <span>Trẻ em 75% (${passengers.children}x)</span>
-            <span>${childFare.toLocaleString('vi-VN')} VND</span>
-        </div>` : ''}
-        ${passengers.infants > 0 ? `
-        <div class="fare-row">
-            <span>Em bé 10% (${passengers.infants}x)</span>
-            <span>${infantFare.toLocaleString('vi-VN')} VND</span>
-        </div>` : ''}
-        ${returnFlight ? `<div class="fare-row" style="font-size:12px;color:var(--primary);font-weight:600;"><span>Đã gồm vé chiều về (${returnFlight.flightNumber})</span><span>✓</span></div>` : ''}
-        ${extras.baggage ? `<div class="fare-row"><span>Hành lý 20kg x${totalPassengers}</span><span>${(250000 * totalPassengers).toLocaleString('vi-VN')} VND</span></div>` : ''}
-        ${extras.meal ? `<div class="fare-row"><span>Bữa ăn x${totalPassengers}</span><span>${(150000 * totalPassengers).toLocaleString('vi-VN')} VND</span></div>` : ''}
-        ${extras.priority ? `<div class="fare-row"><span>Ưu tiên thủ tục x${totalPassengers}</span><span>${(100000 * totalPassengers).toLocaleString('vi-VN')} VND</span></div>` : ''}
-        <div class="fare-row"><span>Thuế &amp; phí (10%)</span><span>${tax.toLocaleString('vi-VN')} VND</span></div>
-        ${discount > 0 ? `
-        <div class="fare-row" style="color:var(--success);font-weight:700;">
-            <span><i class="fa-solid fa-tag"></i> Giảm giá (${appliedVoucher.code})</span>
-            <span>-${discount.toLocaleString('vi-VN')} VND</span>
-        </div>` : ''}
-        <div class="fare-row total">
-            <span>Tổng cộng</span>
-            <span>${total.toLocaleString('vi-VN')} VND</span>
-        </div>
-    `;
-
+    document.getElementById('fare-summary').innerHTML = `<h5>Tóm tắt chi phí</h5>${bookingSummaryHTML()}
+        <p>${bookingState.totalPassengers} hành khách · Giá từng hạng đã gồm thuế/phí.</p>
+        <p>Giá áp dụng như nhau cho mỗi hành khách theo biểu giá hiện hành. Giá cuối cùng được kiểm tra khi đặt vé.</p>
+        <div class="fare-row total"><span>Tổng cộng</span><span>${money(total)}</span></div>`;
     generateQRMock();
 }
 
@@ -781,12 +564,14 @@ async function processPayment() {
     const { flight, returnFlight, passengerData, selectedSeats, extras, totalAmount } = bookingState;
     const mainPax = passengerData?.[0] || { lastName: 'KHACH', firstName: 'HANG' };
     const fullName = `${mainPax.lastName} / ${mainPax.firstName}`.trim();
-    const seat = selectedSeats[0] || '15A';
+    const seat = null;
     const gate = 'B12';
 
     const bookingPayload = {
-        flightNumber: flight.flightNumber,
-        returnFlightNumber: returnFlight ? returnFlight.flightNumber : null,
+        flightNumber: flight.flightCode || flight.flightNumber,
+        returnFlightNumber: returnFlight ? (returnFlight.flightCode || returnFlight.flightNumber) : null,
+        fareClass: flight.fareClass,
+        returnFareClass: returnFlight?.fareClass || null,
         origin: flight.origin,
         destination: flight.destination,
         departDate: flight.departDate || currentSearch.departDate || new Date().toISOString().split('T')[0],
@@ -821,6 +606,8 @@ async function processPayment() {
 
     const pnr = savedBookingData.pnr;
     bookingState.generatedPNR = pnr;
+    bookingState.confirmedBooking = savedBookingData;
+    bookingState.totalAmount = savedBookingData.totalAmount;
     bookingState.generatedGate = gate;
 
     const newBooking = {
@@ -837,7 +624,7 @@ async function processPayment() {
         status: savedBookingData.status,
         seat,
         gate,
-        totalAmount: bookingState.totalAmount,
+        totalAmount: savedBookingData.totalAmount,
         userEmail: currentUser ? currentUser.email : null,
         createdAt: new Date().toISOString()
     };
@@ -854,71 +641,14 @@ async function processPayment() {
 // -------- Boarding Pass --------
 
 function buildBoardingPass() {
-    const { flight, passengerData, selectedSeats } = bookingState;
-    const pnr = bookingState.generatedPNR || 'ĐANG TẢI';
-    const mainPax = passengerData?.[0] || { lastName: 'NGUYEN', firstName: 'VAN A' };
-    const fullName = `${mainPax.lastName} / ${mainPax.firstName}`;
-    const seat = selectedSeats[0] || '15A';
-    const gate = 'B' + Math.floor(Math.random() * 20 + 1);
-
-    document.getElementById('boarding-pass').innerHTML = `
-        <div class="bp-top">
-            <div class="bp-airline">
-                <div class="bp-airline-name">
-                    <i class="fa-solid fa-plane-departure"></i>
-                    SkyGo Airways
-                </div>
-                <div class="bp-pnr-badge">${pnr}</div>
-            </div>
-            <div class="bp-route">
-                <div class="bp-city">
-                    <div class="bp-city-code">${flight.origin}</div>
-                    <div class="bp-city-name">${cityName(flight.origin)}</div>
-                </div>
-                <div class="bp-route-arrow">
-                    <hr><i class="fa-solid fa-plane"></i><hr>
-                </div>
-                <div class="bp-city">
-                    <div class="bp-city-code">${flight.destination}</div>
-                    <div class="bp-city-name">${cityName(flight.destination)}</div>
-                </div>
-            </div>
-            <div class="bp-details">
-                <div class="bp-field">
-                    <label>Hành Khách</label>
-                    <span>${fullName}</span>
-                </div>
-                <div class="bp-field">
-                    <label>Chuyến Bay</label>
-                    <span>${flight.flightNumber}</span>
-                </div>
-                <div class="bp-field">
-                    <label>Ngày</label>
-                    <span>${formatDate(new Date())}</span>
-                </div>
-                <div class="bp-field">
-                    <label>Giờ Cất Cánh</label>
-                    <span>${flight.departureTime}</span>
-                </div>
-            </div>
-        </div>
-        <div class="bp-tear">
-            <div class="bp-tear-circle"></div>
-            <hr class="bp-tear-line">
-            <div class="bp-tear-circle"></div>
-        </div>
-        <div class="bp-bottom">
-            <div class="bp-qr">
-                <div class="bp-qr-inner"></div>
-            </div>
-            <div class="bp-stub-details">
-                <div class="bp-stub-flight">${flight.flightNumber}</div>
-                <div class="bp-stub-info">${flight.origin} &rarr; ${flight.destination} &bull; ${flight.departureTime}</div>
-                <div class="bp-stub-info">Cửa: ${gate} &bull; Hành khách: ${fullName}</div>
-                <div class="bp-stub-seat">GHẾ ${seat}</div>
-            </div>
-        </div>
-    `;
+    const container = document.getElementById('boarding-pass');
+    container.classList.remove('boarding-pass');
+    container.classList.add('booking-confirmation');
+    try {
+        const data = bookingState.confirmedBooking;
+        if (!data || !Array.isArray(data.tickets) || !data.tickets.length) throw new Error('Không tải được thông tin vé. Vui lòng tra cứu PNR để xem lại.');
+        container.innerHTML = `<p class="booking-confirmation-total">Tổng thanh toán: ${money(data.totalAmount)}</p>` + data.tickets.map(t => boardingPassHTML(t)).join('');
+    } catch (err) { container.innerHTML = `<p class="ticket-load-error" role="alert">${escapeHtml(err.message)}</p>`; }
 }
 
 function generatePNR() {
@@ -991,30 +721,11 @@ async function cancelBooking(pnr) {
 }
 
 function printTicketFromPNR(pnr) {
-    const bookings = getStoredBookings();
-    const b = bookings.find(item => item.pnr === pnr);
-    if (!b) {
-        showToast('error', 'Lỗi', 'Không tìm thấy thông tin vé để in.');
-        return;
-    }
-    bookingState = {
-        flight: {
-            origin: b.origin || 'SGN',
-            destination: b.destination || 'HAN',
-            flightNumber: b.flightNumber || 'SG-101',
-            departureTime: b.departTime || '08:00',
-        },
-        passengerData: [{
-            lastName: b.passengerName.split('/')[0]?.trim() || 'NGUYEN',
-            firstName: b.passengerName.split('/')[1]?.trim() || 'VAN A'
-        }],
-        selectedSeats: [b.seat || '12A'],
-        totalPassengers: 1,
-    };
-    buildBoardingPass();
-    openBookingModal(bookingState.flight);
-    goToStep(4);
-    setTimeout(() => window.print(), 300);
+    closeModal('modal-my-bookings');
+    switchView('client');
+    document.getElementById('pnr-code-input').value = pnr;
+    document.getElementById('pnr-lastname-input').focus();
+    showToast('info','Tra cứu vé','Nhập họ hành khách để xem đầy đủ vé và chọn thẻ lên máy bay.');
 }
 
 function initPNRForm() {
@@ -1039,19 +750,8 @@ function initPNRForm() {
             }
             const data = await res.json();
             displayPNRResult(data, true, lastName);
-        } catch {
-            // Mock & LocalStorage lookup
-            setTimeout(() => {
-                const bookings = getStoredBookings();
-                const record = bookings.find(b => b.pnr === pnr);
-                if (record && record.passengerName.toUpperCase().includes(lastName)) {
-                    displayPNRResult(record, true, lastName);
-                } else if (record && !record.passengerName.toUpperCase().includes(lastName)) {
-                    displayPNRResult({ message: 'Họ hành khách không khớp với mã PNR đã nhập. Vui lòng kiểm tra lại.' }, false);
-                } else {
-                    displayPNRResult({ message: `Không tìm thấy đặt chỗ với mã PNR "${pnr}". Vui lòng kiểm tra lại.` }, false);
-                }
-            }, 600);
+        } catch (err) {
+            displayPNRResult({message:err.message}, false);
         } finally {
             btn.innerHTML = '<i class="fa-solid fa-search"></i> Tra cứu';
             btn.disabled = false;
@@ -1061,71 +761,12 @@ function initPNRForm() {
 
 function displayPNRResult(data, isSuccess, lastName) {
     const display = document.getElementById('pnr-result-display');
-    display.classList.remove('hidden', 'error', 'success');
-
-    if (isSuccess) {
-        display.classList.add('success');
-        const isCancelled = data.status === 'CANCELLED';
-        const isEligibleForCheckin = (data.status === 'PAID' || data.status === 'CONFIRMED' || data.status === 'ISSUED') && !isCancelled;
-        display.innerHTML = `
-            <div class="pnr-result-header">
-                <div class="pnr-badge">${data.pnr}</div>
-                <div class="${isCancelled ? 'badge badge-departed' : 'status-confirmed'}">
-                    <i class="fa-solid ${isCancelled ? 'fa-ban' : 'fa-circle-check'}"></i> ${data.status}
-                </div>
-            </div>
-            <div class="pnr-detail-card">
-                <div>
-                    <div class="pnr-field-label">Hành Khách</div>
-                    <div class="pnr-field-value">${data.passengerName}</div>
-                </div>
-                <div>
-                    <div class="pnr-field-label">Chuyến Bay</div>
-                    <div class="pnr-field-value">${data.flightNumber}</div>
-                </div>
-                <div>
-                    <div class="pnr-field-label">Lộ Trình</div>
-                    <div class="pnr-field-value">${data.route}</div>
-                </div>
-                <div>
-                    <div class="pnr-field-label">Ngày Khởi Hành</div>
-                    <div class="pnr-field-value">${data.departDate}</div>
-                </div>
-                <div>
-                    <div class="pnr-field-label">Giờ Cất Cánh</div>
-                    <div class="pnr-field-value">${data.departTime || '--'}</div>
-                </div>
-                <div>
-                    <div class="pnr-field-label">Ghế</div>
-                    <div class="pnr-field-value">${data.seat || 'Chưa chọn'}</div>
-                </div>
-            </div>
-            <div style="margin-top:16px;display:flex;gap:10px;justify-content:flex-end;align-items:center;flex-wrap:wrap;">
-                <button class="btn btn-outline btn-sm" onclick="printTicketFromPNR('${data.pnr}')">
-                    <i class="fa-solid fa-print"></i> In Thẻ Lên Máy Bay
-                </button>
-                ${isEligibleForCheckin ? `
-                <button class="btn btn-accent btn-sm btn-checkin-link" onclick="goToOnlineCheckin('${data.pnr}', '${encodeURIComponent(lastName || '')}')">
-                    <i class="fa-solid fa-plane-circle-check"></i> Làm Thủ Tục Check-in
-                </button>` : ''}
-                ${!isCancelled ? `
-                <button class="btn-cancel-ticket" onclick="cancelBooking('${data.pnr}')">
-                    <i class="fa-solid fa-ban"></i> Hủy Đặt Chỗ
-                </button>` : `<span style="font-size:13px;color:var(--text-muted);font-style:italic;">(Vé này đã bị hủy)</span>`}
-            </div>
-        `;
-    } else {
-        display.classList.add('error');
-        display.innerHTML = `
-            <div style="display:flex;align-items:flex-start;gap:12px;">
-                <i class="fa-solid fa-triangle-exclamation" style="font-size:22px;margin-top:2px;"></i>
-                <div>
-                    <strong>Không tìm thấy thông tin</strong>
-                    <p style="margin-top:6px;font-size:14px;">${data.message}</p>
-                </div>
-            </div>
-        `;
-    }
+    display.classList.remove('hidden','error','success');
+    if (!isSuccess) { display.classList.add('error'); display.textContent = data.message; return; }
+    display.classList.add('success');
+    display.innerHTML = `<strong>PNR ${escapeHtml(data.pnr)} · ${escapeHtml(data.status)}</strong>${ticketList(data.tickets)}
+        <button id="pnr-to-checkin" class="btn btn-primary">Chọn vé để check-in / xem thẻ</button>`;
+    document.getElementById('pnr-to-checkin').onclick = () => goToOnlineCheckin(data.pnr, encodeURIComponent(lastName));
 }
 
 function goToOnlineCheckin(pnr, encodedLastName) {
@@ -1146,166 +787,71 @@ function goToOnlineCheckin(pnr, encodedLastName) {
 // ============================================================
 
 function initCheckinForm() {
-    const form = document.getElementById('checkin-form');
-    form.addEventListener('submit', async (e) => {
+    document.getElementById('checkin-form').addEventListener('submit', async e => {
         e.preventDefault();
-
-        const pnr = document.getElementById('checkin-pnr-input').value.trim().toUpperCase();
-        const lastName = document.getElementById('checkin-lastname-input')?.value.trim().toUpperCase() || '';
-        const btn = document.getElementById('btn-checkin-submit');
-
-        if (!pnr) { showToast('error', 'Thiếu thông tin', 'Vui lòng nhập mã PNR.'); return; }
-
-        btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Đang xử lý...';
-        btn.disabled = true;
-
-        try {
-            const res = await fetch(`${API_BASE_URL}/checkin`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ pnr, lastName })
-            });
-            if (!res.ok) {
-                const errData = await res.json().catch(() => ({}));
-                throw new Error(errData.message || 'Check-in thất bại.');
-            }
-            const data = await res.json();
-            openCheckinSeatSelection(pnr, data);
-        } catch {
-            setTimeout(() => {
-                const bookings = getStoredBookings();
-                const record = bookings.find(b => b.pnr === pnr);
-
-                if (!record) {
-                    displayCheckinError(`Mã PNR "${pnr}" không tồn tại trong hệ thống.`);
-                    return;
-                }
-
-                if (lastName && !record.passengerName.toUpperCase().includes(lastName)) {
-                    displayCheckinError(`Họ hành khách "${lastName}" không khớp với mã PNR ${pnr}.`);
-                    return;
-                }
-
-                if (record.status === 'CANCELLED') {
-                    displayCheckinError(`Mã vé ${pnr} đã bị hủy, không thể thực hiện check-in.`);
-                    return;
-                }
-
-                openCheckinSeatSelection(pnr, record);
-            }, 600);
-        } finally {
-            btn.innerHTML = '<i class="fa-solid fa-circle-check"></i> Thực hiện Check-in';
-            btn.disabled = false;
-        }
+        checkinAccess = {pnr:document.getElementById('checkin-pnr-input').value.trim(),
+            lastName:document.getElementById('checkin-lastname-input').value.trim()};
+        try { await refreshCheckinTickets(); }
+        catch (err) { displayCheckinError(err.message); }
     });
+}
+
+function normalizeSeat(s) {
+    if (!s) return '';
+    const match = String(s).trim().toUpperCase().match(/^0*(\d+)([A-Z])$/);
+    if (match) {
+        return `${parseInt(match[1], 10)}${match[2]}`; // "03A" -> "3A"
+    }
+    return String(s).trim().toUpperCase();
 }
 
 function openCheckinSeatSelection(pnr, record) {
     activeCheckinRecord = record;
-    // Khong duoc gan cung '12A' vi 12A co the da bi hanh khach khac chon hoac khong thuoc hang ve.
-    // Lay ghe hien tai neu da co, hoac lay ghe dau tien trong danh sach ghe kha dung thuc te tu CSDL
-    const availSeats = record.availableSeats || [];
-    activeCheckinSeat = record.seat || (availSeats.length > 0 ? availSeats[0] : null);
-
-    const summary = document.getElementById('checkin-seatmap-summary');
-    if (summary) {
-        const seatText = record.seat
-            ? `<span style="color:var(--success);font-weight:700;">${record.seat}</span>`
-            : (activeCheckinSeat
-                ? `<span style="color:var(--primary);font-weight:700;">${activeCheckinSeat} (Gợi ý)</span>`
-                : '<span style="color:#eab308;font-weight:700;">Chưa chọn</span>');
-        summary.innerHTML = `
-            <div><strong>Hành khách:</strong> ${record.passengerName} &bull; <strong>Chuyến bay:</strong> ${record.flightNumber} (${record.route})</div>
-            <div style="margin-top:6px;font-size:13px;color:var(--text-muted);">
-                <i class="fa-solid fa-ticket"></i> Hạng vé: <strong>${record.cabinClass || record.ticketClass || 'Phổ thông'}</strong>
-                &bull; <i class="fa-solid fa-clock"></i> Khung giờ check-in: <strong>24h - 1h trước bay</strong>
-                &bull; <i class="fa-solid fa-chair"></i> Ghế chọn: ${seatText}
-            </div>
-        `;
-    }
-
-    buildCheckinSeatMap(activeCheckinSeat);
+    activeCheckinSeat = null;
+    document.getElementById('checkin-seatmap-summary').innerHTML = `${escapeHtml(record.passengerName)} · ${escapeHtml(record.route)} · ${displayDate(record.departDate)} ${escapeHtml(record.departTime)} · ${fareLabel(record.fareClass)}`;
+    buildCheckinSeatMap();
     openModal('modal-checkin-seatmap');
-
-    // Tu dong cuon toi vi tri ghe duoc chon
-    setTimeout(() => {
-        const map = document.getElementById('checkin-seat-map');
-        const selectedElem = map?.querySelector('.seat.selected');
-        if (selectedElem) {
-            selectedElem.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        }
-    }, 150);
 }
 
-function buildCheckinSeatMap(currentSeat) {
+function buildCheckinSeatMap() {
     const map = document.getElementById('checkin-seat-map');
-    if (!map) return;
-    const rows = 18;
-    const cols = ['A', 'B', 'C', 'D', 'E', 'F'];
-    let html = '';
-
-    const availSeats = activeCheckinRecord?.availableSeats || [];
-
-    html += `<div class="seat-row">
-        <div class="row-number"></div>
-        ${cols.slice(0, 3).map(c => `<div style="width:34px;text-align:center;font-size:10px;font-weight:600;color:var(--text-muted);">${c}</div>`).join('')}
-        <div class="aisle"></div>
-        ${cols.slice(3).map(c => `<div style="width:34px;text-align:center;font-size:10px;font-weight:600;color:var(--text-muted);">${c}</div>`).join('')}
-    </div>`;
-
-    for (let r = 1; r <= rows; r++) {
-        html += `<div class="seat-row"><div class="row-number">${r}</div>`;
-        cols.forEach((col, ci) => {
-            const seatId = `${r}${col}`;
-            // Quy tac: Chi nhung ghe thuc su co trong danh sach ghe kha dung (availableSeats)
-            // cua chuyen bay va hang ve moi duoc xem la TRONG (click duoc).
-            // Cac ghe da bi dat hoac khong ton tai tren chuyen bay/hang ve deu phai danh dau 'taken' (khong the click).
-            const isAvailable = availSeats.includes(seatId);
-            const isCurrent = seatId === currentSeat;
-            const isClickable = isAvailable || isCurrent;
-            const isSelected = seatId === activeCheckinSeat;
-
-            let cls = 'seat';
-            let title = `Ghế ${seatId}`;
-
-            if (!isClickable) {
-                cls += ' taken';
-                title = `Ghế ${seatId}: Không khả dụng / Đã đặt`;
-            } else {
-                title = `Ghế ${seatId}: Khả dụng (Trống)`;
-            }
-
-            if (isSelected) {
-                cls += ' selected';
-                title = `Ghế ${seatId}: Đang được chọn`;
-            }
-
-            html += `<div class="${cls}" data-checkin-seat="${seatId}" title="${title}">${seatId}</div>`;
-            if (ci === 2) html += `<div class="aisle"></div>`;
-        });
-        html += `</div>`;
+    const record = activeCheckinRecord;
+    if (!Array.isArray(record.allSeats) || !record.allSeats.length) {
+        map.innerHTML = '<p role="alert">Không tải được cấu hình ghế của chuyến bay. Vui lòng đóng và chọn lại vé.</p>';
+        return;
     }
-
-    map.innerHTML = html;
-
-    map.querySelectorAll('.seat:not(.taken)').forEach(seat => {
-        seat.addEventListener('click', () => {
-            map.querySelectorAll('.seat.selected').forEach(s => s.classList.remove('selected'));
-            seat.classList.add('selected');
-            activeCheckinSeat = seat.dataset.checkinSeat;
-
-            const summary = document.getElementById('checkin-seatmap-summary');
-            if (summary && activeCheckinRecord) {
-                const infoDiv = summary.querySelector('div:last-child');
-                if (infoDiv) {
-                    infoDiv.innerHTML = `
-                        <i class="fa-solid fa-ticket"></i> Hạng vé: <strong>${activeCheckinRecord.cabinClass || activeCheckinRecord.ticketClass || 'Phổ thông'}</strong>
-                        &bull; <i class="fa-solid fa-clock"></i> Khung giờ check-in: <strong>24h - 1h trước bay</strong>
-                        &bull; <i class="fa-solid fa-chair"></i> Ghế chọn: <span style="color:var(--primary);font-weight:700;">${activeCheckinSeat} (Đang chọn)</span>
-                    `;
-                }
-            }
-        });
+    const available = new Set(record.availableSeats.map(normalizeSeat));
+    const cabins = new Map();
+    for (const seat of record.allSeats) {
+        const parts = /^(\d+)([A-Z])$/.exec(normalizeSeat(seat.seat));
+        if (!parts) continue;
+        if (!cabins.has(seat.fareClass)) cabins.set(seat.fareClass, []);
+        cabins.get(seat.fareClass).push({...seat, row:Number(parts[1]), column:parts[2]});
+    }
+    map.innerHTML = [...cabins.entries()].map(([fare, seats]) => {
+        const columns = [...new Set(seats.map(s => s.column))].sort();
+        const split = Math.ceil(columns.length / 2);
+        const rows = [...new Set(seats.map(s => s.row))].sort((a,b) => a-b);
+        const cells = (row, header = false) => columns.map((col, i) => {
+            const aisle = i === split ? '<span class="aisle" aria-hidden="true"></span>' : '';
+            if (header) return aisle + `<span class="seat-column">${col}</span>`;
+            const seat = seats.find(s => s.row === row && s.column === col);
+            if (!seat) return aisle + '<span class="seat-gap" aria-hidden="true"></span>';
+            const sameClass = fare === record.fareClass;
+            const canSelect = sameClass && available.has(normalizeSeat(seat.seat));
+            const taken = Boolean(Number(seat.taken));
+            const reason = taken ? 'Đã có người' : !sameClass ? 'Khác hạng vé đã mua' : !canSelect ? 'Không khả dụng' : 'Còn trống';
+            return aisle + `<button type="button" class="seat${taken ? ' taken' : !canSelect ? ' unavailable' : ''}" data-checkin-seat="${escapeHtml(seat.seat)}" aria-label="Ghế ${escapeHtml(seat.seat)}: ${reason}" title="${reason}" ${canSelect ? '' : 'disabled'}>${escapeHtml(seat.seat)}</button>`;
+        }).join('');
+        return `<section class="cabin-seat-map"><h4>${fareLabel(fare)}</h4><div class="seat-row"><span class="row-number">Hàng</span>${cells(null,true)}</div>` +
+            rows.map(row => `<div class="seat-row"><span class="row-number">${row}</span>${cells(row)}</div>`).join('') + '</section>';
+    }).join('');
+    if (!available.size) map.insertAdjacentHTML('afterbegin','<p>Không còn ghế khả dụng cho hạng vé này.</p>');
+    map.querySelectorAll('[data-checkin-seat]').forEach(button => button.onclick = () => {
+        if (button.disabled) return;
+        map.querySelectorAll('.selected').forEach(el => el.classList.remove('selected'));
+        button.classList.add('selected');
+        activeCheckinSeat = button.dataset.checkinSeat;
     });
 }
 
@@ -1322,104 +868,51 @@ function initCheckinSeatmapModal() {
 
         const button = document.getElementById('btn-confirm-checkin-seat');
         button.disabled = true;
+        button.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Đang xử lý...';
+        const selectedTicket = activeCheckinRecord;
+        const selectedSeat = activeCheckinSeat;
         try {
+            const lastNameVal = checkinAccess.lastName;
             const res = await fetch(`${API_BASE_URL}/checkin/confirm`, {
-                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    pnr: activeCheckinRecord.pnr,
-                    lastName: document.getElementById('checkin-lastname-input').value.trim(),
-                    seat: activeCheckinSeat
+                    pnr: selectedTicket.pnr,
+                    lastName: lastNameVal,
+                    ticketId: selectedTicket.ticketId,
+                    seat: selectedSeat
                 })
             });
             const data = await res.json();
             if (!res.ok) throw new Error(data.message || 'Không thể ghi nhận check-in.');
+            if (data.ticketId !== selectedTicket.ticketId) throw new Error('Máy chủ trả về thẻ của vé khác. Vui lòng tra cứu lại.');
+
             closeModal('modal-checkin-seatmap');
+            try { await refreshCheckinTickets(); }
+            catch { showToast('warning','Chưa tải lại được danh sách','Check-in đã được ghi nhận. Vui lòng tra cứu lại danh sách vé.'); }
             displayCheckinSuccess(data.pnr, data);
-            showToast('success', 'Hoàn tất check-in', `Ghế ngồi ${data.seat} đã được lưu vào database.`);
+            showToast('success', 'Hoàn tất check-in', `Ghế ngồi ${data.seat} đã được xác nhận.`);
         } catch (err) {
             showToast('error', 'Check-in thất bại', err.message);
         } finally {
             button.disabled = false;
+            button.innerHTML = '<i class="fa-solid fa-circle-check"></i> Xác nhận chọn ghế & Hoàn tất Check-in';
         }
     });
 }
 
 function displayCheckinSuccess(pnr, data) {
     const display = document.getElementById('checkin-result-display');
-    display.classList.remove('hidden', 'error', 'success');
+    display.classList.remove('hidden', 'error');
     display.classList.add('success');
-
-    display.innerHTML = `
-        <div style="margin-bottom:16px;display:flex;align-items:center;gap:12px;">
-            <i class="fa-solid fa-circle-check" style="font-size:28px;color:var(--success);"></i>
-            <div>
-                <strong style="font-size:16px;color:#166534;">Check-in Thành Công!</strong>
-                <p style="font-size:13px;margin-top:2px;color:var(--text-muted);">Boarding pass đã được tạo. Vui lòng bấm In Vé hoặc lưu lại để lên máy bay.</p>
-            </div>
-        </div>
-        <div class="boarding-pass" style="max-width:100%;">
-            <div class="bp-top">
-                <div class="bp-airline">
-                    <div class="bp-airline-name">
-                        <i class="fa-solid fa-plane-departure"></i> SkyGo Airways
-                    </div>
-                    <div class="bp-pnr-badge">${pnr}</div>
-                </div>
-                <div class="bp-route">
-                    <div class="bp-city">
-                        <div class="bp-city-code">${data.origin || 'SGN'}</div>
-                        <div class="bp-city-name">${cityName(data.origin || 'SGN')}</div>
-                    </div>
-                    <div class="bp-route-arrow">
-                        <hr><i class="fa-solid fa-plane"></i><hr>
-                    </div>
-                    <div class="bp-city">
-                        <div class="bp-city-code">${data.destination || 'HAN'}</div>
-                        <div class="bp-city-name">${cityName(data.destination || 'HAN')}</div>
-                    </div>
-                </div>
-                <div class="bp-details">
-                    <div class="bp-field">
-                        <label>Hành Khách</label>
-                        <span>${data.passengerName || 'NGUYEN / VAN A'}</span>
-                    </div>
-                    <div class="bp-field">
-                        <label>Chuyến Bay</label>
-                        <span>${data.flightNumber || 'SG-101'}</span>
-                    </div>
-                    <div class="bp-field">
-                        <label>Ngày</label>
-                        <span>${data.departDate || formatDate(new Date())}</span>
-                    </div>
-                    <div class="bp-field">
-                        <label>Giờ Cất Cánh</label>
-                        <span>${data.departTime || '08:00'}</span>
-                    </div>
-                </div>
-            </div>
-            <div class="bp-tear">
-                <div class="bp-tear-circle"></div>
-                <hr class="bp-tear-line">
-                <div class="bp-tear-circle"></div>
-            </div>
-            <div class="bp-bottom">
-                <div class="bp-qr"><div class="bp-qr-inner"></div></div>
-                <div class="bp-stub-details">
-                    <div class="bp-stub-flight">${data.flightNumber || 'SG-101'}</div>
-                    <div class="bp-stub-info">${data.origin || 'SGN'} &rarr; ${data.destination || 'HAN'} &bull; ${data.departTime || '08:00'}</div>
-                    <div class="bp-stub-info">Cửa: ${data.gate || 'B12'}</div>
-                    <div class="bp-stub-seat">GHẾ ${data.seat || '12A'}</div>
-                </div>
-            </div>
-        </div>
-        <div style="margin-top:16px;text-align:right;">
-            <button class="btn btn-outline" onclick="window.print()">
-                <i class="fa-solid fa-print"></i> In Thẻ Lên Máy Bay
-            </button>
-        </div>
-    `;
+    try {
+        if (data?.pnr !== pnr) throw new Error('Thẻ không thuộc mã đặt chỗ đang xem. Vui lòng tra cứu lại.');
+        display.innerHTML = boardingPassHTML(data, true) + `
+        <button class="btn btn-outline" onclick="window.print()">In thẻ</button>
+        <button class="btn btn-primary" onclick="refreshCheckinTickets().catch(e => displayCheckinError(e.message))">Quay lại danh sách vé</button>`;
+        display.scrollIntoView({behavior:'smooth',block:'start'});
+    } catch (err) { displayCheckinError(err.message); }
 }
-
 function displayCheckinError(message) {
     const display = document.getElementById('checkin-result-display');
     display.classList.remove('hidden', 'error', 'success');
@@ -1429,7 +922,7 @@ function displayCheckinError(message) {
             <i class="fa-solid fa-circle-xmark" style="font-size:22px;margin-top:2px;"></i>
             <div>
                 <strong>Check-in thất bại</strong>
-                <p style="margin-top:6px;font-size:14px;">${message}</p>
+                <p style="margin-top:6px;font-size:14px;">${escapeHtml(message)}</p>
             </div>
         </div>
     `;
@@ -1950,7 +1443,7 @@ function renderAdminFlightsTable(flights) {
                 </td>
                 <td>
                     <i class="fa-regular fa-clock" style="color:var(--text-muted);margin-right:4px;"></i>
-                    ${f.departTime}
+                    ${displayDateTime(f.departTime)}
                 </td>
                 <td>
                     <span style="font-size:13px;">${f.booked}/${f.total} (${pct}%)</span>
@@ -1995,7 +1488,7 @@ function adminViewFlight(flightNo) {
     showNotification(
         `Chi Tiết Chuyến Bay ${f.flightNumber}`,
         `Lộ trình: ${f.origin} → ${f.destination}\n` +
-        `Giờ bay: ${f.departTime} - ${f.arriveTime || '10:00'} | Loại tàu bay: ${f.aircraft || 'A320'}\n` +
+        `Giờ bay: ${displayDateTime(f.departTime)} - ${displayDateTime(f.arriveTime || '10:00')} | Loại tàu bay: ${f.aircraft || 'A320'}\n` +
         `Giá vé: ${Number(f.price || 1450000).toLocaleString('vi-VN')} VND | Tỷ lệ đặt: ${f.booked}/${f.total} (${pct}%)\n` +
         `Trạng thái: ${f.status.toUpperCase()}`,
         'info'
@@ -2011,6 +1504,7 @@ function adminEditFlight(flightNo) {
     document.getElementById('ef-origin').value = flight.origin;
     document.getElementById('ef-destination').value = flight.destination;
     document.getElementById('ef-depart-date').value = flight.departDate || flight.departTime?.slice(0, 10) || '';
+    document.getElementById('ef-depart-date').dispatchEvent(new Event('change'));
     document.getElementById('ef-depart-time').value = flight.departTime?.slice(-5) || '08:00';
     document.getElementById('ef-arrive-time').value = flight.arriveTime?.slice(-5) || '10:00';
     document.getElementById('ef-price').value = flight.basePrice ?? flight.price ?? 1450000;
@@ -2177,7 +1671,7 @@ async function renderMyBookings() {
         const res = await fetch(`${API_BASE_URL}/bookings/my`);
         const data = await res.json();
         if (!res.ok) throw new Error(data.message || 'Không thể tải lịch sử đặt vé.');
-        userBookings = data.map(b => ({ ...b, route: `${b.origin || ''} → ${b.destination || ''}`, departDate: b.departure ? new Date(b.departure).toLocaleDateString('vi-VN') : '', seat: b.seat || 'Chưa chọn' }));
+        userBookings = data.map(b => ({ ...b, route: `${b.origin || ''} → ${b.destination || ''}`, departDate: b.tickets?.[0]?.departDate || '', seat: b.seat || 'Chưa chọn' }));
     } catch (err) { listEl.innerHTML = `<p style="text-align:center;padding:24px;color:var(--error)">${err.message}</p>`; return; }
 
     if (userBookings.length === 0) {
@@ -2202,12 +1696,13 @@ async function renderMyBookings() {
                 </div>
                 <strong style="font-size:15px;margin-top:4px;">${b.route || (b.origin + ' → ' + b.destination)} (${b.flightNumber})</strong>
                 <span style="font-size:13px;color:var(--text-muted);">
-                    <i class="fa-regular fa-calendar"></i> ${b.departDate} &bull; <i class="fa-solid fa-chair"></i> Ghế: ${b.seat || 'Chưa chọn'}
+                    <i class="fa-regular fa-calendar"></i> ${displayDate(b.departDate)} &bull; <i class="fa-solid fa-chair"></i> Ghế: ${b.seat || 'Chưa chọn'}
                 </span>
                 <span style="font-size:13px;color:var(--text-muted);">
                     <i class="fa-regular fa-user"></i> Hành khách: ${b.passengerName}
                 </span>
             </div>
+            ${ticketList(b.tickets || [])}
             <div class="booking-actions">
                 <button class="btn btn-outline btn-sm" onclick="printTicketFromPNR('${b.pnr}')" title="In vé">
                     <i class="fa-solid fa-print"></i> In vé

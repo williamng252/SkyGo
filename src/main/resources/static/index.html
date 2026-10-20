@@ -11,7 +11,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap"
     rel="stylesheet">
-  <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="styles.css?v=20261021-ui2">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 </head>
 
@@ -689,7 +689,7 @@
 
         <!-- Step 2: Seat & Extras -->
         <div class="step-panel" id="step-panel-2">
-          <h4 class="step-title"><i class="fa-solid fa-chair"></i> Chọn Ghế &amp; Dịch Vụ Thêm</h4>
+          <h4 class="step-title"><i class="fa-solid fa-chair"></i> Thông Tin Ghế</h4>
 
           <div class="seat-map-wrapper">
             <div class="seat-legend">
@@ -701,7 +701,7 @@
             <div class="seat-map" id="seat-map"></div>
           </div>
 
-          <div class="extras-section">
+          <div class="extras-section" hidden>
             <h5 class="extras-title"><i class="fa-solid fa-bag-shopping"></i> Dịch Vụ Bổ Sung</h5>
             <div class="extras-grid">
               <label class="extra-card" id="extra-baggage-label">
@@ -748,7 +748,7 @@
           <div class="payment-layout">
             <div>
               <div class="fare-summary" id="fare-summary"></div>
-              <div class="voucher-box"
+              <div class="voucher-box" hidden
                 style="margin-top:16px;background:#f8fafc;padding:16px;border-radius:12px;border:1px dashed #cbd5e1;">
                 <label for="voucher-input"
                   style="font-weight:600;font-size:13px;display:flex;align-items:center;gap:6px;margin-bottom:8px;">
@@ -835,9 +835,9 @@
               <i class="fa-solid fa-circle-check"></i>
             </div>
             <h4>Đặt Vé Thành Công!</h4>
-            <p>Vé của bạn đã được xác nhận. Thẻ lên máy bay (Boarding pass) bên dưới.</p>
+            <p>Thông tin các vé đã đặt ở bên dưới. Thẻ lên máy bay được cấp sau khi check-in.</p>
           </div>
-          <div class="boarding-pass" id="boarding-pass">
+          <div class="booking-confirmation" id="boarding-pass">
             <!-- Rendered by JS -->
           </div>
           <div class="step-nav boarding-actions">
@@ -1105,6 +1105,7 @@
           <span class="legend-item"><span class="seat-demo available"></span> Trống</span>
           <span class="legend-item"><span class="seat-demo taken"></span> Đã đặt</span>
           <span class="legend-item"><span class="seat-demo selected"></span> Ghế chọn</span>
+          <span class="legend-item"><span class="seat-demo unavailable"></span> Khác hạng / không khả dụng</span>
         </div>
         <div class="aircraft-nose"><i class="fa-solid fa-plane"></i></div>
         <div class="seat-map" id="checkin-seat-map"></div>
@@ -1118,7 +1119,9 @@
     </div>
   </div>
 
-  <script src="app.js"></script>
+  <script src="dates.js?v=20261021-ui2"></script>
+  <script src="booking-ui.js?v=20261021-ui2"></script>
+  <script src="app.js?v=20261021-ui2"></script>
 </body>
 
 </html>

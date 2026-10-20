@@ -31,15 +31,16 @@ public class FlightService {
         }
 
         try {
-            return jdbc.query(
+            List<Map<String, Object>> rows = jdbc.query(
                 "EXEC dbo.usp_TimChuyenBay @MaSanBayDi=?, @MaSanBayDen=?, @NgayDi=?, @SoHanhKhach=?",
                 (rs, n) -> {
                     String code = rs.getString("MaChuyenBay");
                     String number = rs.getString("SoHieuChuyen");
                     String orig = rs.getString("MaSanBayDi");
                     String dest = rs.getString("MaSanBayDen");
-                    LocalDateTime dep = rs.getTimestamp("GioCatCanh").toLocalDateTime();
-                    LocalDateTime arr = rs.getTimestamp("GioDenDuKien").toLocalDateTime();
+                    // DATETIME2 flight timestamps are UTC; search dates are Vietnam dates.
+                    LocalDateTime dep = rs.getTimestamp("GioCatCanh").toLocalDateTime().plusHours(7);
+                    LocalDateTime arr = rs.getTimestamp("GioDenDuKien").toLocalDateTime().plusHours(7);
                     BigDecimal price = rs.getBigDecimal("GiaVe");
                     int seats = rs.getInt("SoChoCon");
                     String fareClass = rs.getString("HangVe");
@@ -53,10 +54,30 @@ public class FlightService {
                 java.sql.Date.valueOf(date),
                 passengers
             );
+            return groupFares(rows);
         } catch (DataAccessException ex) {
             String msg = ex.getMessage();
             throw new ApiException(HttpStatus.BAD_REQUEST, "Lỗi tìm chuyến bay: " + (msg != null && msg.contains(":") ? msg.substring(msg.lastIndexOf(":") + 1).trim() : msg));
         }
+    }
+
+    static List<Map<String, Object>> groupFares(List<Map<String, Object>> rows) {
+        Map<String, Map<String, Object>> flights = new LinkedHashMap<>();
+        Map<String, List<Map<String, Object>>> fares = new LinkedHashMap<>();
+        for (Map<String, Object> row : rows) {
+            String code = row.get("flightCode").toString(); // PK of the dated flight, not SoHieuChuyen.
+            Map<String, Object> flight = flights.computeIfAbsent(code, k -> new LinkedHashMap<>(row));
+            List<Map<String, Object>> options = fares.computeIfAbsent(code, k -> new ArrayList<>());
+            options.add(Map.of("fareClass", row.get("fareClass"), "price", row.get("price"),
+                "seatsAvailable", row.get("seatsAvailable")));
+            if (((BigDecimal) row.get("price")).compareTo((BigDecimal) flight.get("price")) < 0) {
+                flight.put("price", row.get("price"));
+            }
+            flight.remove("fareClass");
+            flight.remove("seatsAvailable");
+            flight.put("fares", options);
+        }
+        return new ArrayList<>(flights.values());
     }
 
     private Map<String, Object> flightMap(String code, String number, String origin, String destination,
@@ -103,8 +124,8 @@ public class FlightService {
             m.put("flightNumber", rs.getString("SoHieuChuyen").trim());
             m.put("origin", rs.getString("MaSanBayDi").trim());
             m.put("destination", rs.getString("MaSanBayDen").trim());
-            LocalDateTime dep = rs.getTimestamp("GioCatCanh").toLocalDateTime();
-            LocalDateTime arr = rs.getTimestamp("GioDenDuKien").toLocalDateTime();
+            LocalDateTime dep = rs.getTimestamp("GioCatCanh").toLocalDateTime().plusHours(7);
+            LocalDateTime arr = rs.getTimestamp("GioDenDuKien").toLocalDateTime().plusHours(7);
             m.put("departTime", dep.toLocalDate().toString() + " " + dep.toLocalTime().toString().substring(0, 5));
             m.put("arriveTime", arr.toLocalDate().toString() + " " + arr.toLocalTime().toString().substring(0, 5));
             m.put("departDate", dep.toLocalDate().toString());
@@ -175,8 +196,8 @@ public class FlightService {
             code = code.trim().toUpperCase();
         }
 
-        LocalDateTime dep = req.departure();
-        LocalDateTime arr = req.arrival();
+        LocalDateTime dep = req.departure().minusHours(7);
+        LocalDateTime arr = req.arrival().minusHours(7);
         if (!arr.isAfter(dep)) arr = arr.plusDays(1);
         LocalDateTime openCheckin = dep.minusHours(24);
         LocalDateTime closeCheckin = dep.minusHours(1);
@@ -206,8 +227,8 @@ public class FlightService {
 
     @Transactional
     public void updateFlight(String code, Requests.FlightUpsert req) {
-        LocalDateTime dep = req.departure();
-        LocalDateTime arr = req.arrival();
+        LocalDateTime dep = req.departure().minusHours(7);
+        LocalDateTime arr = req.arrival().minusHours(7);
         if (!arr.isAfter(dep)) arr = arr.plusDays(1);
         String aircraft = normalizeAircraft(req.aircraft());
         String realCode = resolveFlightCode(code);

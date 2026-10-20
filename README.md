@@ -61,6 +61,8 @@ Kiểm tra sức khỏe hệ thống: [http://localhost:8080/api/health](http://
 
 ## Danh sách API Backend
 
+Hướng dẫn nâng cấp hạng vé/khứ hồi và kiểm tra ngày tháng, PNR nhiều hành khách: [docs/kiem-tra-ngay-hang-ve-pnr.md](docs/kiem-tra-ngay-hang-ve-pnr.md). Chạy script nâng cấp số 15 thủ công trên database hiện có trước khi sử dụng luồng đặt vé mới.
+
 - **Xác thực & Hồ sơ:**
   - `POST /api/auth/register` — Đăng ký tài khoản khách hàng mới (mật khẩu mã hóa BCrypt).
   - `POST /api/auth/login` — Đăng nhập, cấp token phiên làm việc 8 tiếng.

@@ -28,6 +28,16 @@ public class BookingService {
         this.sessions = sessions;
     }
 
+    public Map<String, Object> flightSeatMap(String flightCode) {
+        String code = resolveFlightCode(flightCode);
+        return Map.of("flightCode", code, "seats", jdbc.queryForList("""
+            SELECT g.SoGhe AS seat, g.HangVe AS fareClass,
+                CASE WHEN EXISTS (SELECT 1 FROM dbo.CHECK_IN c
+                    WHERE c.MaGhe=g.MaGhe AND c.TrangThai='CHECKED_IN') THEN 1 ELSE 0 END AS taken
+            FROM dbo.GHE_CHUYEN_BAY g WHERE g.MaChuyenBay=? ORDER BY g.SoGhe
+            """, code));
+    }
+
     @Transactional
     public Map<String, Object> create(HttpServletRequest request, Requests.Booking req) {
         if (req.passengers() == null || req.passengers().isEmpty()) {
@@ -54,7 +64,10 @@ public class BookingService {
         for (Requests.Passenger p : req.passengers()) {
             Map<String, Object> item = new LinkedHashMap<>();
             item.put("HoTen", fullName(p));
-            LocalDate dob = p.dateOfBirth() != null ? p.dateOfBirth() : LocalDate.of(1995, 1, 1);
+            LocalDate dob = p.dateOfBirth();
+            if (dob == null || dob.isAfter(LocalDate.now(java.time.ZoneId.of("Asia/Ho_Chi_Minh")))) {
+                throw new ApiException(HttpStatus.BAD_REQUEST, "Ngày sinh không hợp lệ.");
+            }
             item.put("NgaySinh", dob.toString());
             item.put("GioiTinh", gender(p.gender()));
             item.put("LoaiGiayTo", "CCCD");
@@ -77,12 +90,30 @@ public class BookingService {
         try {
             // 1. Tao don dat ve va cac ve qua usp_TaoDonDatVe
             orderResult = jdbc.queryForMap(
-                "EXEC dbo.usp_TaoDonDatVe @MaKhachHang=?, @MaChuyenBay=?, @HangVe='ECONOMY', @HoTenLienHe=?, @EmailLienHe=?, @SDTLienHe=?, @DanhSachHanhKhach=?",
-                customerId, flightCode, contactName, contactEmail, contactPhone, paxJson
+                "EXEC dbo.usp_TaoDonDatVe @MaKhachHang=?, @MaChuyenBay=?, @HangVe=?, @HoTenLienHe=?, @EmailLienHe=?, @SDTLienHe=?, @DanhSachHanhKhach=?, @MaChuyenBayVe=?, @HangVeVe=?",
+                customerId, flightCode, fareClass(req.fareClass()), contactName, contactEmail, contactPhone, paxJson,
+                req.returnFlightNumber() == null || req.returnFlightNumber().isBlank() ? null : resolveFlightCode(req.returnFlightNumber()),
+                fareClass(req.returnFareClass())
             );
         } catch (DataAccessException ex) {
-            String msg = ex.getMessage();
-            throw new ApiException(HttpStatus.BAD_REQUEST, "Đặt vé thất bại: " + (msg != null && msg.contains(":") ? msg.substring(msg.lastIndexOf(":") + 1).trim() : msg));
+            Throwable root = ex.getMostSpecificCause() != null ? ex.getMostSpecificCause() : ex;
+            String msg = root.getMessage();
+            if (msg != null) {
+                if (msg.contains("50010") || msg.contains("khong con du dieu kien")) {
+                    msg = "Chuyến bay đã qua giờ khởi hành hoặc không còn mở bán để đặt vé.";
+                } else if (msg.contains("50011") || msg.contains("Khong du cho")) {
+                    msg = "Chuyến bay không còn đủ chỗ trống cho số lượng hành khách đã chọn.";
+                } else if (msg.contains("50002")) {
+                    msg = "Thông tin hành khách không hợp lệ.";
+                } else if (msg.contains("50004")) {
+                    msg = "Tài khoản khách hàng không tồn tại hoặc đã bị khóa.";
+                } else if (msg.contains(";")) {
+                    msg = msg.substring(msg.lastIndexOf(";") + 1).trim();
+                } else if (msg.contains(":")) {
+                    msg = msg.substring(msg.lastIndexOf(":") + 1).trim();
+                }
+            }
+            throw new ApiException(HttpStatus.BAD_REQUEST, "Đặt vé thất bại: " + (msg != null ? msg : "Dữ liệu không hợp lệ."));
         }
 
         long orderId = ((Number) orderResult.get("MaDonDatVe")).longValue();
@@ -101,35 +132,20 @@ public class BookingService {
             throw new ApiException(HttpStatus.BAD_REQUEST, "Thanh toán thất bại: " + (msg != null && msg.contains(":") ? msg.substring(msg.lastIndexOf(":") + 1).trim() : msg));
         }
 
-        // 3. Lay chi tiet chuyen bay de tra ve cho frontend
-        Map<String, Object> flight = jdbc.queryForMap(
-            "SELECT SoHieuChuyen, MaSanBayDi, MaSanBayDen, GioCatCanh FROM CHUYEN_BAY WHERE MaChuyenBay=?",
-            flightCode
-        );
-
-        LocalDateTime dep = ((Timestamp) flight.get("GioCatCanh")).toLocalDateTime();
-
-        Map<String, Object> response = new LinkedHashMap<>();
+        Map<String, Object> response = lookup(pnr, contact.lastName());
         response.put("orderId", orderId);
-        response.put("pnr", pnr);
-        response.put("status", "PAID");
         response.put("totalAmount", totalAmount);
-        response.put("passengerName", contactName);
-        response.put("flightNumber", ((String) flight.get("SoHieuChuyen")).trim());
-        response.put("origin", ((String) flight.get("MaSanBayDi")).trim());
-        response.put("destination", ((String) flight.get("MaSanBayDen")).trim());
-        response.put("departDate", dep.toLocalDate().toString());
-        response.put("departTime", dep.toLocalTime().toString().substring(0, 5));
-        response.put("route", flight.get("MaSanBayDi").toString().trim() + " → " + flight.get("MaSanBayDen").toString().trim());
         return response;
     }
 
     public Map<String, Object> lookup(String pnr, String lastName) {
         List<Map<String, Object>> rows = tickets(pnr, lastName);
-        if (rows.isEmpty()) {
-            throw new ApiException(HttpStatus.NOT_FOUND, "Không tìm thấy mã PNR hoặc họ hành khách không khớp.");
-        }
-        return ticketResponse(rows.get(0));
+        List<Map<String, Object>> result = rows.stream().map(this::ticketResponse).toList();
+        Map<String, Object> response = new LinkedHashMap<>();
+        response.put("pnr", rows.get(0).get("MaPNR"));
+        response.put("status", rows.get(0).get("TrangThaiDon"));
+        response.put("tickets", result);
+        return response;
     }
 
     public List<Map<String, Object>> history(HttpServletRequest request) {
@@ -154,7 +170,14 @@ public class BookingService {
 
             // Lay thong tin chuyen bay va ve tu vw_ChiTietVe
             List<Map<String, Object>> tickets = jdbc.queryForList(
-                "SELECT TOP 1 HoTenHanhKhach, SoHieuChuyen, MaSanBayDi, MaSanBayDen, GioCatCanh, SoGhe FROM dbo.vw_ChiTietVe WHERE MaDonDatVe=? ORDER BY MaVe",
+                """
+                SELECT v.*, v.HoTenHanhKhach AS HoTen, h.NgaySinh,
+                    cb.MoCheckInLuc, cb.DongCheckInLuc, SYSUTCDATETIME() AS HienTai
+                FROM dbo.vw_ChiTietVe v
+                JOIN dbo.HANH_KHACH h ON h.MaHanhKhach=v.MaHanhKhach
+                JOIN dbo.CHUYEN_BAY cb ON cb.MaChuyenBay=v.MaChuyenBay
+                WHERE v.MaDonDatVe=? ORDER BY v.GioCatCanh,v.MaVe
+                """,
                 orderId
             );
 
@@ -181,6 +204,7 @@ public class BookingService {
                 item.put("departure", null);
                 item.put("seat", null);
             }
+            item.put("tickets", tickets.stream().map(this::ticketResponse).toList());
             result.add(item);
         }
 
@@ -202,111 +226,46 @@ public class BookingService {
     }
 
     public Map<String, Object> prepareCheckin(Requests.Checkin req) {
-        List<Map<String, Object>> rows = tickets(req.pnr(), req.lastName());
-        if (rows.isEmpty()) {
-            throw new ApiException(HttpStatus.NOT_FOUND, "Không tìm thấy mã PNR hoặc họ hành khách không khớp.");
+        if (req.ticketId() == null) return lookup(req.pnr(), req.lastName());
+        Map<String, Object> ticket = selectedTicket(tickets(req.pnr(), req.lastName()), req.ticketId());
+        Map<String, Object> result = ticketResponse(ticket);
+        if (!Boolean.TRUE.equals(result.get("checkinEligible"))) {
+            throw new ApiException(HttpStatus.CONFLICT, result.get("checkinReason").toString());
         }
-        Map<String, Object> ticket = rows.get(0);
-        String ticketStatus = (String) ticket.get("TrangThaiVe");
-        if (!"ISSUED".equals(ticketStatus) && !"USED".equals(ticketStatus)) {
-            throw new ApiException(HttpStatus.CONFLICT, "Vé chưa thanh toán hoặc đã bị hủy, không thể check-in.");
-        }
-
-        long ticketId = ((Number) ticket.get("MaVe")).longValue();
-        String flightCode = (String) ticket.get("MaChuyenBay");
-
-        // Lay danh sach ghe kha dung qua usp_LayGheKhaDung
-        List<String> availableSeats = jdbc.query(
-            "EXEC dbo.usp_LayGheKhaDung @MaVe=?",
-            (rs, n) -> rs.getString("SoGhe"),
-            ticketId
-        );
-
-        // Lay tat ca ghe de tinh danh sach unavailableSeats
-        List<String> allSeats = jdbc.queryForList(
-            "SELECT SoGhe FROM GHE_CHUYEN_BAY WHERE MaChuyenBay=?",
-            String.class, flightCode
-        );
-
-        Set<String> availSet = new HashSet<>(availableSeats);
-        List<String> unavailableSeats = new ArrayList<>();
-        for (String s : allSeats) {
-            if (!availSet.contains(s)) {
-                unavailableSeats.add(s);
-            }
-        }
-
-        Map<String, Object> response = ticketResponse(ticket);
-        response.put("availableSeats", availableSeats);
-        response.put("unavailableSeats", unavailableSeats);
-        return response;
+        result.put("availableSeats", jdbc.queryForList(
+            "SELECT SoGhe FROM dbo.fn_DanhSachGheKhaDung(?) ORDER BY SoGhe", String.class, req.ticketId()));
+        result.put("allSeats", jdbc.queryForList("""
+            SELECT g.SoGhe AS seat, g.HangVe AS fareClass,
+                CASE WHEN EXISTS (SELECT 1 FROM dbo.CHECK_IN c
+                    WHERE c.MaGhe=g.MaGhe AND c.TrangThai='CHECKED_IN') THEN 1 ELSE 0 END AS taken
+            FROM dbo.GHE_CHUYEN_BAY g WHERE g.MaChuyenBay=? ORDER BY LEN(g.SoGhe),g.SoGhe
+            """, ticket.get("MaChuyenBay").toString().trim()));
+        return result;
     }
 
     @Transactional
     public Map<String, Object> confirmCheckin(Requests.CheckinConfirm req) {
-        List<Map<String, Object>> rows = tickets(req.pnr(), req.lastName());
-        if (rows.isEmpty()) {
-            throw new ApiException(HttpStatus.NOT_FOUND, "Không tìm thấy mã PNR hoặc họ hành khách không khớp.");
-        }
-
-        Map<String, Object> rawTicket = rows.get(0);
-        long ticketId = ((Number) rawTicket.get("MaVe")).longValue();
-        String flightCode = (String) rawTicket.get("MaChuyenBay");
-        String seatName = req.seat().toUpperCase().trim();
-
-        // Tim MaGhe tuong ung
-        Long seatId = jdbc.query(
-            "SELECT MaGhe FROM GHE_CHUYEN_BAY WHERE MaChuyenBay=? AND (SoGhe=? OR SoGhe=?)",
-            rs -> rs.next() ? rs.getLong(1) : null,
-            flightCode, seatName, seatName.replaceFirst("^0", "")
-        );
-        if (seatId == null) {
-            throw new ApiException(HttpStatus.BAD_REQUEST, "Ghế không tồn tại trên chuyến bay này.");
-        }
-
+        selectedTicket(tickets(req.pnr(), req.lastName()), req.ticketId());
+        String rawSeat = req.seat().trim().toUpperCase(Locale.ROOT).replaceFirst("^0+", "");
+        List<Long> seats = jdbc.queryForList("""
+            SELECT MaGhe FROM dbo.fn_DanhSachGheKhaDung(?)
+            WHERE SoGhe=? OR SoGhe=?
+            """, Long.class, req.ticketId(), rawSeat, "0" + rawSeat);
+        if (seats.size() != 1) throw new ApiException(HttpStatus.CONFLICT, "Ghế không khả dụng hoặc không thuộc hạng vé.");
         try {
-            // Goi Stored Procedure usp_CheckIn
-            jdbc.queryForList(
-                "EXEC dbo.usp_CheckIn @MaVe=?, @MaGhe=?, @MaTK=NULL",
-                ticketId, seatId
-            );
+            jdbc.queryForList("EXEC dbo.usp_CheckIn @MaVe=?, @MaGhe=?, @MaTK=NULL", req.ticketId(), seats.get(0));
         } catch (DataAccessException ex) {
-            Throwable root = ex.getMostSpecificCause() != null ? ex.getMostSpecificCause() : ex;
-            String msg = root.getMessage();
-            if (msg != null) {
-                if (msg.contains("Ghe da duoc chon")) {
-                    msg = "Ghế đã được chọn bởi hành khách khác. Hãy chọn ghế khác.";
-                } else if (msg.contains("Ghe khong cung chuyen bay")) {
-                    msg = "Ghế không thuộc chuyến bay hoặc không đúng hạng vé đã mua.";
-                } else if (msg.contains("Ve da check-in")) {
-                    msg = "Vé này đã được check-in trước đó. Vui lòng kiểm tra lại thẻ lên máy bay.";
-                } else if (msg.contains("Chuyen bay khong trong thoi gian")) {
-                    msg = "Chuyến bay không trong khung giờ cho phép làm thủ tục check-in (24h - 1h trước giờ bay).";
-                } else if (msg.contains(";")) {
-                    msg = msg.substring(msg.lastIndexOf(';') + 1).trim();
-                }
-            }
-            throw new ApiException(HttpStatus.CONFLICT, "Lỗi check-in: " + (msg != null ? msg : "Không thể thực hiện check-in."));
+            throw new ApiException(HttpStatus.CONFLICT, "Không thể check-in: " + ex.getMostSpecificCause().getMessage());
         }
-
-        // Goi Stored Procedure usp_LayTheLenMayBay
-        List<Map<String, Object>> bpRows = jdbc.queryForList(
-            "EXEC dbo.usp_LayTheLenMayBay @MaVe=?",
-            ticketId
-        );
-
-        Map<String, Object> result = ticketResponse(rawTicket);
-        result.put("seat", seatName);
+        Map<String, Object> result = ticketResponse(selectedTicket(tickets(req.pnr(), req.lastName()), req.ticketId()));
         result.put("status", "CHECKED_IN");
-        result.put("gate", "B12");
-
-        if (!bpRows.isEmpty()) {
-            Map<String, Object> bp = bpRows.get(0);
-            result.put("qrCode", bp.get("MaQR_BP"));
-            if (bp.get("SoGhe") != null) result.put("seat", bp.get("SoGhe"));
-        }
-
         return result;
+    }
+
+    static Map<String, Object> selectedTicket(List<Map<String, Object>> rows, Long id) {
+        if (id == null) throw new ApiException(HttpStatus.BAD_REQUEST, "Vui lòng chọn vé của hành khách và chặng bay.");
+        return rows.stream().filter(t -> ((Number)t.get("MaVe")).longValue() == id)
+            .findFirst().orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "Vé không thuộc đặt chỗ được phép truy cập."));
     }
 
     public Map<String, Object> adminStats() {
@@ -381,52 +340,85 @@ public class BookingService {
     }
 
     private List<Map<String, Object>> tickets(String pnr, String lastName) {
-        // Su dung view vw_ChiTietVe
-        return jdbc.queryForList("""
-            SELECT TOP 20
-                v.MaVe, v.HangVe, v.TrangThaiVe, v.MaChuyenBay, v.SoHieuChuyen,
-                v.MaSanBayDi, v.MaSanBayDen, v.GioCatCanh, v.MaPNR, v.TrangThaiDon,
-                v.HoTenHanhKhach AS HoTen, v.SoGhe, v.DaCheckIn, v.GiaVeChot
+        List<Map<String, Object>> rows = jdbc.queryForList("""
+            SELECT v.*, v.HoTenHanhKhach AS HoTen, h.NgaySinh,
+                cb.MoCheckInLuc, cb.DongCheckInLuc, SYSUTCDATETIME() AS HienTai
             FROM dbo.vw_ChiTietVe v
-            WHERE v.MaPNR = ?
-              AND (UPPER(v.HoTenHanhKhach) LIKE ? OR ? = '')
-            ORDER BY CASE WHEN v.DaCheckIn = 0 THEN 0 ELSE 1 END, v.MaVe
-        """, pnr.toUpperCase().trim(), "%" + lastName.trim().toUpperCase() + "%", lastName.trim());
+            JOIN dbo.HANH_KHACH h ON h.MaHanhKhach=v.MaHanhKhach
+            JOIN dbo.CHUYEN_BAY cb ON cb.MaChuyenBay=v.MaChuyenBay
+            WHERE v.MaPNR=? ORDER BY v.GioCatCanh, v.MaVe
+            """, pnr == null ? "" : pnr.trim().toUpperCase(Locale.ROOT));
+        return authorizeTickets(rows, lastName);
+    }
+
+    static List<Map<String, Object>> authorizeTickets(List<Map<String, Object>> rows, String lastName) {
+        String surname = normalizeName(lastName);
+        if (surname.isBlank() || rows.stream().noneMatch(t -> {
+            String name = normalizeName(Objects.toString(t.get("HoTen"), ""));
+            return name.equals(surname) || name.startsWith(surname + " ");
+        })) throw new ApiException(HttpStatus.NOT_FOUND, "Không tìm thấy PNR hoặc họ hành khách không khớp.");
+        return rows;
+    }
+
+    static String normalizeName(String name) {
+        String value = java.text.Normalizer.normalize(name == null ? "" : name, java.text.Normalizer.Form.NFD);
+        return value.replaceAll("\\p{M}", "").replace('đ', 'd').replace('Đ', 'D')
+            .replaceAll("[\\p{Z}\\s]+", " ").trim().toUpperCase(Locale.ROOT);
     }
 
     private Map<String, Object> ticketResponse(Map<String, Object> t) {
-        Timestamp ts = (Timestamp) t.get("GioCatCanh");
-        LocalDateTime d = ts != null ? ts.toLocalDateTime() : LocalDateTime.now();
+        LocalDateTime dep = ((Timestamp)t.get("GioCatCanh")).toLocalDateTime().plusHours(7);
         Map<String, Object> r = new LinkedHashMap<>();
         r.put("pnr", t.get("MaPNR"));
         r.put("status", t.get("TrangThaiDon"));
+        r.put("ticketStatus", t.get("TrangThaiVe"));
         r.put("passengerName", t.get("HoTen"));
-        r.put("flightNumber", t.get("SoHieuChuyen") != null ? t.get("SoHieuChuyen").toString().trim() : "");
-        r.put("flightCode", t.get("MaChuyenBay") != null ? t.get("MaChuyenBay").toString().trim() : "");
+        r.put("dateOfBirth", t.get("NgaySinh") == null ? null : t.get("NgaySinh").toString());
+        r.put("flightNumber", t.get("SoHieuChuyen").toString().trim());
+        r.put("flightCode", t.get("MaChuyenBay").toString().trim());
         r.put("fareClass", t.get("HangVe"));
-        r.put("origin", t.get("MaSanBayDi") != null ? t.get("MaSanBayDi").toString().trim() : "");
-        r.put("destination", t.get("MaSanBayDen") != null ? t.get("MaSanBayDen").toString().trim() : "");
+        r.put("price", t.get("GiaVeChot"));
+        r.put("origin", t.get("MaSanBayDi").toString().trim());
+        r.put("destination", t.get("MaSanBayDen").toString().trim());
         r.put("route", r.get("origin") + " → " + r.get("destination"));
-        r.put("departDate", d.toLocalDate().toString());
-        r.put("departTime", d.toLocalTime().toString().substring(0, 5));
+        r.put("departDate", dep.toLocalDate().toString());
+        r.put("departTime", dep.toLocalTime().toString().substring(0, 5));
         r.put("seat", t.get("SoGhe"));
         r.put("ticketId", t.get("MaVe"));
+        r.put("qrCode", t.get("MaQR_BP"));
+        boolean checked = Boolean.TRUE.equals(t.get("DaCheckIn")) || "1".equals(Objects.toString(t.get("DaCheckIn")));
+        String reason;
+        if (checked) reason = "Đã check-in";
+        else if (!"PAID".equals(t.get("TrangThaiDon")) || !"ISSUED".equals(t.get("TrangThaiVe"))) reason = "Vé chưa phát hành, đã dùng hoặc đã hủy";
+        else if (!Set.of("SCHEDULED", "DELAYED").contains(t.get("TrangThaiChuyenBay"))) reason = "Chuyến bay không cho phép check-in";
+        else if (t.get("HienTai") == null || t.get("MoCheckInLuc") == null) reason = "Chưa có thông tin khung giờ check-in";
+        else {
+            LocalDateTime now = ((Timestamp)t.get("HienTai")).toLocalDateTime();
+            LocalDateTime open = ((Timestamp)t.get("MoCheckInLuc")).toLocalDateTime();
+            LocalDateTime close = ((Timestamp)t.get("DongCheckInLuc")).toLocalDateTime();
+            reason = now.isBefore(open) ? "Chưa đến giờ mở check-in" : !now.isBefore(close) ? "Đã đóng check-in" : "Có thể check-in";
+        }
+        r.put("checkedIn", checked);
+        r.put("checkinEligible", "Có thể check-in".equals(reason));
+        r.put("checkinReason", reason);
         return r;
     }
 
     private String resolveFlightCode(String flight) {
-        List<String> list = jdbc.queryForList(
-            "SELECT MaChuyenBay FROM CHUYEN_BAY WHERE MaChuyenBay=? OR SoHieuChuyen=?",
-            String.class, flight.trim(), flight.trim()
-        );
-        if (list.isEmpty()) {
-            throw new ApiException(HttpStatus.NOT_FOUND, "Không tìm thấy chuyến bay: " + flight);
-        }
-        return list.get(0).trim();
+        if (flight == null || flight.isBlank()) throw new ApiException(HttpStatus.BAD_REQUEST, "Thiếu mã chuyến bay.");
+        List<String> codes = jdbc.queryForList("SELECT MaChuyenBay FROM dbo.CHUYEN_BAY WHERE MaChuyenBay=?", String.class, flight.trim());
+        if (codes.size() != 1) throw new ApiException(HttpStatus.BAD_REQUEST, "Phải chọn mã chuyến bay cụ thể, không dùng số hiệu chuyến.");
+        return codes.get(0).trim();
+    }
+
+    private String fareClass(String value) {
+        String fare = value == null ? "ECONOMY" : value.trim().toUpperCase(Locale.ROOT);
+        if (!Set.of("ECONOMY", "BUSINESS").contains(fare)) throw new ApiException(HttpStatus.BAD_REQUEST, "Hạng vé không hợp lệ.");
+        return fare;
     }
 
     private String fullName(Requests.Passenger p) {
-        return (p.lastName().trim() + " " + p.firstName().trim()).toUpperCase();
+        return (p.lastName() + " " + p.firstName()).replaceAll("[\\p{Z}\\s]+", " ").trim().toUpperCase(Locale.ROOT);
     }
 
     private String gender(String g) {

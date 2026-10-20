@@ -149,7 +149,14 @@ class SkyGoIntegrationTest {
         jdbcTemplate.update("UPDATE VE_CHUYEN_BAY SET TrangThai = 'ISSUED' WHERE MaDonDatVe = (SELECT MaDonDatVe FROM DON_DAT_VE WHERE MaPNR = 'JK56LM') AND MaHanhKhach = (SELECT MaHanhKhach FROM HANH_KHACH WHERE HoTen LIKE '%Huy%')");
 
         // Seed order JK56LM has Lan (already checked in) and Huy (not checked in)
-        Map<String, Object> checkin = bookingService.prepareCheckin(new Requests.Checkin("JK56LM", "Pham"));
+        Map<String, Object> bookingDetail = bookingService.prepareCheckin(new Requests.Checkin("JK56LM", "Pham"));
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> ticketList = (List<Map<String, Object>>) bookingDetail.get("tickets");
+        Map<String, Object> huyTicket = ticketList.stream()
+            .filter(t -> t.get("passengerName").toString().toUpperCase().contains("HUY"))
+            .findFirst().orElseThrow();
+        Long ticketId = ((Number) huyTicket.get("ticketId")).longValue();
+        Map<String, Object> checkin = bookingService.prepareCheckin(new Requests.Checkin("JK56LM", "Pham", ticketId));
         assertNotNull(checkin);
         assertEquals("JK56LM", checkin.get("pnr"));
         List<?> avail = (List<?>) checkin.get("availableSeats");
@@ -159,7 +166,7 @@ class SkyGoIntegrationTest {
         System.out.println("Available seats: " + avail + ", choosing: " + chooseSeat);
 
         // Confirm check-in for Huy
-        Map<String, Object> confirmed = bookingService.confirmCheckin(new Requests.CheckinConfirm("JK56LM", "Pham", chooseSeat));
+        Map<String, Object> confirmed = bookingService.confirmCheckin(new Requests.CheckinConfirm("JK56LM", "Pham", chooseSeat, ticketId));
         assertNotNull(confirmed);
         assertEquals("CHECKED_IN", confirmed.get("status"));
         assertEquals(chooseSeat, confirmed.get("seat"));
@@ -174,7 +181,7 @@ class SkyGoIntegrationTest {
         jdbcTemplate.update("UPDATE DON_DAT_VE SET TrangThai = 'CANCELLED' WHERE HoTenLienHe = 'TRAN VAN NAM'");
 
         Requests.Passenger pax = new Requests.Passenger("Tran", "Van Nam", LocalDate.of(1998, 5, 20), "MALE", "079098000999");
-        Requests.Booking req = new Requests.Booking("SG101", null, List.of(pax), "VIETQR");
+        Requests.Booking req = new Requests.Booking("SG001", null, List.of(pax), "VIETQR", List.of(), null);
 
         Map<String, Object> booking = bookingService.create(null, req);
         assertNotNull(booking);

@@ -25,7 +25,8 @@ public class SkyGoController {
     @PutMapping("/profile") public Map<String,Object> profile(HttpServletRequest request,@Valid @RequestBody Requests.Profile r){return auth.updateProfile(request,r);}
 
     @GetMapping("/airports") public List<Map<String,Object>> airports(){return flights.airports();}
-    @GetMapping("/flights/search") public List<Map<String,Object>> search(@RequestParam @Size(min=3,max=3) String origin,@RequestParam @Size(min=3,max=3) String destination,@RequestParam @NotNull LocalDate departDate,@RequestParam(defaultValue="1") @Min(1) @Max(9) int adults,@RequestParam(defaultValue="0") @Min(0) int children,@RequestParam(defaultValue="0") @Min(0) int infants){return flights.search(origin, destination, departDate, adults+children);}
+    @GetMapping("/flights/search") public List<Map<String,Object>> search(@RequestParam @Size(min=3,max=3) String origin,@RequestParam @Size(min=3,max=3) String destination,@RequestParam @NotNull LocalDate departDate,@RequestParam(defaultValue="1") @Min(1) @Max(9) int adults,@RequestParam(defaultValue="0") @Min(0) int children,@RequestParam(defaultValue="0") @Min(0) int infants){return flights.search(origin, destination, departDate, adults+children+infants);}
+    @GetMapping("/flights/{flightCode}/seats") public Map<String,Object> flightSeats(@PathVariable String flightCode){return bookings.flightSeatMap(flightCode);}
     @PostMapping("/bookings") public Map<String,Object> booking(HttpServletRequest request,@Valid @RequestBody Requests.Booking r){return bookings.create(request,r);}
     @GetMapping("/pnr/lookup") public Map<String,Object> lookup(@RequestParam String code,@RequestParam String lastName){return bookings.lookup(code,lastName);}
     @GetMapping("/bookings/my") public List<Map<String,Object>> history(HttpServletRequest request){return bookings.history(request);}

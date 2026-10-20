@@ -2935,3 +2935,37 @@ img {
         border-color: #333 !important;
     }
 }
+/* Explicit day/month/year field; the native date text is never visible. */
+.date-entry { display:flex; align-items:center; position:relative; width:100%; min-width:0; }
+.date-entry > input[type=hidden] { display:none !important; }
+.date-entry > input[type=text] { width:100%; min-width:0; padding-right:42px; }
+.date-entry > .date-picker-button { position:absolute; right:8px; width:28px; height:30px; padding:0; border:0; background:transparent; cursor:pointer; }
+.date-calendar { position:absolute; top:calc(100% + 6px); right:0; z-index:10000; width:310px; max-width:calc(100vw - 32px); padding:12px; background:#fff; color:var(--text); border:1px solid var(--border-dark); border-radius:10px; box-shadow:var(--shadow-lg); }
+.date-calendar[hidden] { display:none !important; }
+.date-calendar-nav { display:flex; align-items:center; gap:6px; margin-bottom:8px; }
+.date-calendar-nav select { min-width:0; width:auto; flex:1; padding:6px; font-size:13px; }
+.date-calendar button { border:0; border-radius:6px; background:transparent; cursor:pointer; min-height:32px; color:var(--text); }
+.date-calendar-nav button { padding:2px 8px; font-size:22px; }
+.date-calendar-grid { display:grid; grid-template-columns:repeat(7,1fr); text-align:center; gap:2px; font-size:13px; }
+.date-calendar-grid button:hover:not(:disabled),.date-calendar-grid [aria-current=date] { background:var(--accent); color:#fff; }
+.date-calendar-grid button:disabled { color:#bbc2cf; cursor:not-allowed; }
+.fare-choice,.ticket-detail { padding:12px; margin:8px 0; border:1px solid #cbd5e1; border-radius:8px; line-height:1.7; }
+#checkin-seat-map { display:flex; flex-direction:column; gap:20px; max-height:50vh; overflow:auto; padding:8px; }
+.cabin-seat-map { display:flex; flex-direction:column; align-items:center; gap:8px; }
+.cabin-seat-map h4 { color:var(--navy); font-size:13px; margin-bottom:6px; }
+.seat-column,.seat-gap { display:inline-flex; align-items:center; justify-content:center; width:34px; height:24px; flex-shrink:0; font-size:11px; }
+.seat.unavailable,.seat-demo.unavailable { background:#edf0f4; border-style:dashed; color:#8994a7; cursor:not-allowed; }
+.seat-legend { flex-wrap:wrap; }
+.boarding-pass { color:#fff; }
+.bp-document-type { color:rgba(255,255,255,.8); font-size:12px; letter-spacing:1px; margin-bottom:16px; }
+.boarding-pass .bp-field span { overflow-wrap:anywhere; }
+.bp-code { max-width:240px; color:rgba(255,255,255,.8); font-size:11px; }
+.bp-code code { display:block; color:#fff; overflow-wrap:anywhere; font-size:11px; }
+.booking-confirmation-total { text-align:center; font-weight:700; color:var(--navy); }
+.ticket-load-error { padding:20px; color:#991b1b; background:#fef2f2; border-radius:10px; }
+#checkin-result-display { scroll-margin-top:90px; }
+#checkin-result-display .btn-outline { color:var(--navy); border-color:var(--border-dark); background:#fff; }
+@media print {
+    .boarding-pass * { color:#000 !important; }
+    .bp-pnr-badge { background:transparent !important; border:1px solid #333; }
+}

@@ -1,0 +1,116 @@
+// Evaluate in Edge/Chrome DevTools (or Runtime.evaluate) against the running app.
+// uiTestPnrs supplies existing records: [{pnr,lastName}, {pnr,lastName}]. No writes to SQL.
+(async () => {
+    const checks = [];
+    const assert = (condition, label) => { if (!condition) throw new Error(label); checks.push(label); };
+    const json = async (path, payload) => {
+        const res = await fetch('/api' + path, payload ? {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)} : {});
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.message || `HTTP ${res.status}`);
+        return data;
+    };
+    await new Promise(resolve => setTimeout(resolve, 500));
+    const errors = [];
+    window.addEventListener('error', event => errors.push(event.message));
+    const wrapper = document.querySelector('#depart-date').closest('.date-entry');
+    assert(wrapper && wrapper.querySelectorAll('input:not([type=hidden])').length === 1, 'One visible date input');
+    assert(!wrapper.querySelector('input[type=date]'), 'No secondary native MM/dd/yyyy input');
+    const iso = document.getElementById('depart-date');
+    assert(iso.getBoundingClientRect().width === 0 && getComputedStyle(iso).display === 'none', 'ISO field occupies no space');
+    const text = wrapper.querySelector('input[type=text]');
+    text.value = '23/11/2030';
+    text.dispatchEvent(new Event('input', {bubbles:true}));
+    text.dispatchEvent(new Event('change', {bubbles:true}));
+    assert(iso.value === '2030-11-23', 'Manual dd/MM/yyyy entry preserves ISO');
+    const trigger = wrapper.querySelector('.date-picker-button');
+    const calendar = wrapper.querySelector('.date-calendar');
+    assert(calendar.hidden, 'Calendar initially closed');
+    trigger.click();
+    assert(!calendar.hidden && getComputedStyle(calendar).display !== 'none', 'Calendar opens on explicit request');
+    calendar.querySelector('[data-calendar-date="2030-11-24"]').click();
+    assert(iso.value === '2030-11-24' && text.value === '24/11/2030' && calendar.hidden, 'Calendar selection updates the same field and closes');
+    trigger.click(); document.body.dispatchEvent(new PointerEvent('pointerdown', {bubbles:true}));
+    assert(calendar.hidden, 'Outside click closes calendar');
+    trigger.click(); wrapper.dispatchEvent(new KeyboardEvent('keydown', {key:'Escape',bubbles:true}));
+    assert(calendar.hidden, 'Escape closes calendar');
+    const returnWrapper = document.getElementById('return-date').closest('.date-entry');
+    returnWrapper.querySelector('.date-picker-button').click();
+    returnWrapper.querySelector('[data-calendar-date="2030-11-25"]').click();
+    assert(document.getElementById('return-date').value === '2030-11-25' && document.getElementById('return-date-display').value === '25/11/2030' && returnWrapper.querySelectorAll('input:not([type=hidden])').length === 1, 'Return date uses the same single-field calendar');
+    const eligibleAccess = uiTestPnrs[1];
+    switchView('checkin');
+    checkinAccess = eligibleAccess;
+    const before = await json('/checkin', eligibleAccess);
+    const stateBefore = before.tickets.map(t => [t.ticketId,t.seat,t.checkedIn]);
+    const target = before.tickets.find(t => t.checkinEligible);
+    assert(Boolean(target), 'Existing real ticket is eligible for seat-map preview');
+    await refreshCheckinTickets();
+    assert(document.querySelectorAll('#checkin-result-display .ticket-detail').length === before.tickets.length, 'PNR displays every ticket');
+    const index = checkinTickets.findIndex(t => t.ticketId === target.ticketId);
+    await selectCheckinTicket(index);
+    assert(activeCheckinRecord.ticketId === target.ticketId && Array.isArray(activeCheckinRecord.allSeats), 'Selected ticket receives its actual aircraft seats');
+    assert(document.querySelectorAll('#checkin-seat-map .seat-row').length > 2, 'Seat map has multiple rows');
+    const row = [...document.querySelectorAll('#checkin-seat-map .seat-row')].find(r => r.querySelectorAll('button:not(:disabled)').length >= 2);
+    assert(Boolean(row?.querySelector('.aisle')), 'Seat rows include an aisle');
+    const pair = [...row.querySelectorAll('button')].slice(0,2).map(b => b.getBoundingClientRect());
+    assert(Math.abs(pair[0].y-pair[1].y)<2 && pair[0].x !== pair[1].x, 'Seats align horizontally within a row');
+    const selectables = [...document.querySelectorAll('#checkin-seat-map button:not(:disabled)')];
+    const actualAvailable = new Set(activeCheckinRecord.availableSeats.map(normalizeSeat));
+    assert(selectables.every(b => actualAvailable.has(normalizeSeat(b.dataset.checkinSeat))), 'Only available seats in the purchased fare are selectable');
+    selectables[0].click();
+    assert(document.querySelectorAll('#checkin-seat-map .selected').length === 1 && activeCheckinSeat === selectables[0].dataset.checkinSeat, 'Selected seat is visibly highlighted');
+    const other = checkinTickets.findIndex(t => t.ticketId !== target.ticketId && t.checkinEligible);
+    if (other >= 0) {
+        await selectCheckinTicket(other);
+        assert(activeCheckinRecord.ticketId === checkinTickets[other].ticketId && activeCheckinSeat === null, 'Switching passengers resets selection for the correct ticket');
+    }
+    closeModal('modal-checkin-seatmap');
+    const checkedAccess = uiTestPnrs[0];
+    checkinAccess = checkedAccess;
+    await refreshCheckinTickets();
+    const checkedIndex = checkinTickets.findIndex(t => t.checkedIn);
+    assert(checkedIndex >= 0, 'Existing checked-in ticket available from real SQL data');
+    const checked = checkinTickets[checkedIndex];
+    // This is also the renderer called immediately with /checkin/confirm's response.
+    displayCheckinSuccess(checked.pnr, checked);
+    let card = document.querySelector('#checkin-result-display .boarding-pass');
+    assert(card && Number(card.dataset.ticketId) === checked.ticketId, 'Immediate boarding-pass renderer uses the selected ticket');
+    assert(card.getBoundingClientRect().width > 0 && card.getBoundingClientRect().height > 0, 'Boarding pass is visible in the active check-in view');
+    assert(card.textContent.includes(checked.passengerName) && card.textContent.includes(checked.seat) && card.textContent.includes(checked.qrCode), 'Boarding pass contains actual passenger, seat and stored card code');
+    assert(card.querySelector('.bp-top') && card.querySelector('.bp-bottom') && card.querySelector('.bp-tear'), 'Original boarding-pass layout restored');
+    assert(getComputedStyle(card.querySelector('.bp-field span')).color === 'rgb(255, 255, 255)', 'Boarding-pass text is readable on the dark background');
+    await showBoardingTicket(checkedIndex);
+    card = document.querySelector('#checkin-result-display .boarding-pass');
+    assert(card && Number(card.dataset.ticketId) === checked.ticketId, 'Reopening re-fetches and displays the same checked-in ticket');
+    const originalFetch = window.fetch;
+    try {
+        window.fetch = async () => { throw new Error('Không kết nối được máy chủ để tải thẻ.'); };
+        await showBoardingTicket(checkedIndex);
+        assert(document.querySelector('#checkin-result-display').classList.contains('error') && document.querySelector('#checkin-result-display').textContent.includes('Không kết nối'), 'Boarding-pass fetch failures show an explicit message');
+    } finally { window.fetch = originalFetch; }
+    displayCheckinSuccess(checked.pnr, {});
+    assert(document.querySelector('#checkin-result-display').classList.contains('error'), 'Missing boarding data shows an error instead of a blank panel');
+    displayCheckinSuccess(checked.pnr, checked);
+    const after = await json('/checkin',eligibleAccess);
+    assert(JSON.stringify(after.tickets.map(t => [t.ticketId,t.seat,t.checkedIn])) === JSON.stringify(stateBefore), 'Preview and reopening do not change other passengers or seats');
+    const flights = await json('/flights/search?' + new URLSearchParams({origin:target.origin,destination:target.destination,departDate:target.departDate,adults:1}));
+    const flight = flights.find(f => f.fares.length > 1);
+    assert(Boolean(flight), 'Actual search still has Economy and Business');
+    const html = flightCards([flight]);
+    assert(html.includes('Economy') && html.includes('Business'), 'Both fare choices remain rendered');
+    openBookingModal({...flight,...flight.fares[0]});
+    const dob = document.getElementById('pax-0-dob');
+    const dobText = document.getElementById('pax-0-dob-display');
+    dobText.value='23/11/2005'; dobText.dispatchEvent(new Event('input',{bubbles:true}));
+    assert(dob.value === '2005-11-23' && dob.closest('.date-entry').querySelectorAll('input:not([type=hidden])').length === 1, 'Birthday uses one field and preserves date-only ISO');
+    dobText.value='23/11/2999';dobText.dispatchEvent(new Event('input',{bubbles:true}));
+    assert(!dob.value && !dobText.checkValidity(), 'Future birthdays remain invalid');
+    bookingState.confirmedBooking = {tickets:before.tickets,totalAmount:before.tickets.reduce((s,t) => s+Number(t.price),0)};
+    buildBoardingPass();
+    assert(document.querySelectorAll('#boarding-pass .boarding-pass').length === before.tickets.length, 'Booking confirmation renders a readable card for every real ticket');
+    closeBookingModal();
+    displayCheckinSuccess(checked.pnr, checked);
+    assert(!errors.length,'No uncaught JavaScript errors during UI checks');
+    await new Promise(resolve => setTimeout(resolve,400));
+    return {passed:checks.length, checks};
+})()
