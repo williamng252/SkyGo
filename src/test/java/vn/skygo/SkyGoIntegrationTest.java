@@ -174,7 +174,8 @@ class SkyGoIntegrationTest {
         jdbcTemplate.update("UPDATE DON_DAT_VE SET TrangThai = 'CANCELLED' WHERE HoTenLienHe = 'TRAN VAN NAM'");
 
         Requests.Passenger pax = new Requests.Passenger("Tran", "Van Nam", LocalDate.of(1998, 5, 20), "MALE", "079098000999");
-        Requests.Booking req = new Requests.Booking("SG101", null, List.of(pax), "VIETQR");
+        Requests.Booking req = new Requests.Booking("SG101", null, List.of(pax), "VIETQR",List.of("12A"), // selectedSeats (tham số 5)
+                "12A");
 
         Map<String, Object> booking = bookingService.create(null, req);
         assertNotNull(booking);
