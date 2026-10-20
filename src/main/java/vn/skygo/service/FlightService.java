@@ -215,7 +215,7 @@ public class FlightService {
             }
 
             String[] cols = {"A", "B", "C", "D", "E", "F"};
-            for (int r = 3; r <= 8; r++) {
+            for (int r = 3; r <= 18; r++) {
                 for (String c : cols) {
                     jdbc.queryForList(
                         "EXEC dbo.usp_AdminThemGhe @MaChuyenBay=?, @HangVe='ECONOMY', @SoGhe=?",

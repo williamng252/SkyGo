@@ -11,7 +11,7 @@ public final class Requests {
     public record Register(@NotBlank String fullName, @Email String email, @NotBlank @Size(min=6) String password, String phone) {}
     public record Login(@jakarta.validation.constraints.NotBlank @com.fasterxml.jackson.annotation.JsonAlias({"username", "identifier"}) String email, @NotBlank String password) {}
     public record Passenger(@NotBlank String lastName, @NotBlank String firstName, LocalDate dateOfBirth, String gender, String documentNumber) {}
-    public record Booking(@NotBlank String flightNumber, String returnFlightNumber, @NotEmpty List<@Valid Passenger> passengers, String paymentMethod) {}
+    public record Booking(@NotBlank String flightNumber, String returnFlightNumber, @NotEmpty List<@Valid Passenger> passengers, String paymentMethod, List<String> selectedSeats, String seat) {}
     public record Checkin(@NotBlank String pnr, @NotBlank String lastName) {}
     public record CheckinConfirm(@NotBlank String pnr, @NotBlank String lastName, @NotBlank String seat) {}
     public record FlightUpsert(String flightCode, @NotBlank String flightNumber, @NotBlank String origin, @NotBlank String destination,

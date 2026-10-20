@@ -16,6 +16,8 @@ import java.sql.Timestamp;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
+import jakarta.annotation.PostConstruct;
 
 @Service
 public class BookingService {
@@ -23,9 +25,100 @@ public class BookingService {
     private final SessionService sessions;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
+    // Lưu ghế hành khách đã chọn khi mua vé theo PNR và theo chuyến bay
+    private final Map<String, String> pnrSeatMap = new ConcurrentHashMap<>();
+    private final Map<String, Set<String>> flightBookedSeats = new ConcurrentHashMap<>();
+
     public BookingService(JdbcTemplate jdbc, SessionService sessions) {
         this.jdbc = jdbc;
         this.sessions = sessions;
+    }
+
+    @PostConstruct
+    public void initFlightSeats() {
+        try {
+            List<String> flightCodes = jdbc.queryForList("SELECT MaChuyenBay FROM CHUYEN_BAY", String.class);
+            for (String code : flightCodes) {
+                ensureFull18RowsOfSeats(code);
+            }
+        } catch (Exception ignored) {}
+    }
+
+    public void ensureFull18RowsOfSeats(String flightCode) {
+        if (flightCode == null || flightCode.isBlank()) return;
+        try {
+            // Đảm bảo 2 hàng ghế BUSINESS (hàng 1-2)
+            jdbc.update("""
+                INSERT INTO GHE_CHUYEN_BAY (MaChuyenBay, HangVe, SoGhe)
+                SELECT ?, 'BUSINESS', s.SoGhe
+                FROM (VALUES ('01A'),('01B'),('01C'),('01D'),('02A'),('02B'),('02C'),('02D')) s(SoGhe)
+                WHERE NOT EXISTS (
+                    SELECT 1 FROM GHE_CHUYEN_BAY g 
+                    WHERE g.MaChuyenBay = ? 
+                      AND (g.SoGhe = s.SoGhe OR (LEFT(s.SoGhe,1)='0' AND g.SoGhe = SUBSTRING(s.SoGhe,2,2)))
+                )
+            """, flightCode, flightCode);
+
+            // Đảm bảo 16 hàng ghế ECONOMY (hàng 3-18)
+            jdbc.update("""
+                INSERT INTO GHE_CHUYEN_BAY (MaChuyenBay, HangVe, SoGhe)
+                SELECT ?, 'ECONOMY', s.SoGhe
+                FROM (
+                    VALUES 
+                    ('03A'),('03B'),('03C'),('03D'),('03E'),('03F'),
+                    ('04A'),('04B'),('04C'),('04D'),('04E'),('04F'),
+                    ('05A'),('05B'),('05C'),('05D'),('05E'),('05F'),
+                    ('06A'),('06B'),('06C'),('06D'),('06E'),('06F'),
+                    ('07A'),('07B'),('07C'),('07D'),('07E'),('07F'),
+                    ('08A'),('08B'),('08C'),('08D'),('08E'),('08F'),
+                    ('09A'),('09B'),('09C'),('09D'),('09E'),('09F'),
+                    ('10A'),('10B'),('10C'),('10D'),('10E'),('10F'),
+                    ('11A'),('11B'),('11C'),('11D'),('11E'),('11F'),
+                    ('12A'),('12B'),('12C'),('12D'),('12E'),('12F'),
+                    ('13A'),('13B'),('13C'),('13D'),('13E'),('13F'),
+                    ('14A'),('14B'),('14C'),('14D'),('14E'),('14F'),
+                    ('15A'),('15B'),('15C'),('15D'),('15E'),('15F'),
+                    ('16A'),('16B'),('16C'),('16D'),('16E'),('16F'),
+                    ('17A'),('17B'),('17C'),('17D'),('17E'),('17F'),
+                    ('18A'),('18B'),('18C'),('18D'),('18E'),('18F')
+                ) s(SoGhe)
+                WHERE NOT EXISTS (
+                    SELECT 1 FROM GHE_CHUYEN_BAY g 
+                    WHERE g.MaChuyenBay = ? 
+                      AND (g.SoGhe = s.SoGhe OR (LEFT(s.SoGhe,1)='0' AND g.SoGhe = SUBSTRING(s.SoGhe,2,2)))
+                )
+            """, flightCode, flightCode);
+        } catch (Exception ignored) {}
+    }
+
+    public Map<String, Object> flightSeatMap(String flightCode) {
+        String realCode = resolveFlightCode(flightCode);
+        ensureFull18RowsOfSeats(realCode);
+
+        List<String> checkedInSeats = jdbc.queryForList("""
+            SELECT g.SoGhe 
+            FROM CHECK_IN c 
+            JOIN GHE_CHUYEN_BAY g ON g.MaGhe = c.MaGhe 
+            WHERE g.MaChuyenBay = ? AND c.TrangThai = 'CHECKED_IN'
+        """, String.class, realCode);
+
+        Set<String> taken = new HashSet<>();
+        for (String s : checkedInSeats) {
+            taken.add(s.replaceFirst("^0*", ""));
+            taken.add(s);
+        }
+
+        Set<String> preSelected = flightBookedSeats.getOrDefault(realCode, Collections.emptySet());
+        for (String s : preSelected) {
+            taken.add(s.replaceFirst("^0*", ""));
+            taken.add(s);
+        }
+
+        Map<String, Object> res = new LinkedHashMap<>();
+        res.put("flightCode", realCode);
+        res.put("totalRows", 18);
+        res.put("takenSeats", new ArrayList<>(taken));
+        return res;
     }
 
     @Transactional
@@ -81,8 +174,24 @@ public class BookingService {
                 customerId, flightCode, contactName, contactEmail, contactPhone, paxJson
             );
         } catch (DataAccessException ex) {
-            String msg = ex.getMessage();
-            throw new ApiException(HttpStatus.BAD_REQUEST, "Đặt vé thất bại: " + (msg != null && msg.contains(":") ? msg.substring(msg.lastIndexOf(":") + 1).trim() : msg));
+            Throwable root = ex.getMostSpecificCause() != null ? ex.getMostSpecificCause() : ex;
+            String msg = root.getMessage();
+            if (msg != null) {
+                if (msg.contains("50010") || msg.contains("khong con du dieu kien")) {
+                    msg = "Chuyến bay đã qua giờ khởi hành hoặc không còn mở bán để đặt vé.";
+                } else if (msg.contains("50011") || msg.contains("Khong du cho")) {
+                    msg = "Chuyến bay không còn đủ chỗ trống cho số lượng hành khách đã chọn.";
+                } else if (msg.contains("50002")) {
+                    msg = "Thông tin hành khách không hợp lệ.";
+                } else if (msg.contains("50004")) {
+                    msg = "Tài khoản khách hàng không tồn tại hoặc đã bị khóa.";
+                } else if (msg.contains(";")) {
+                    msg = msg.substring(msg.lastIndexOf(";") + 1).trim();
+                } else if (msg.contains(":")) {
+                    msg = msg.substring(msg.lastIndexOf(":") + 1).trim();
+                }
+            }
+            throw new ApiException(HttpStatus.BAD_REQUEST, "Đặt vé thất bại: " + (msg != null ? msg : "Dữ liệu không hợp lệ."));
         }
 
         long orderId = ((Number) orderResult.get("MaDonDatVe")).longValue();
@@ -109,6 +218,23 @@ public class BookingService {
 
         LocalDateTime dep = ((Timestamp) flight.get("GioCatCanh")).toLocalDateTime();
 
+        // Ghi nhận ghế được chọn khi đặt vé
+        String selectedSeat = null;
+        if (req.seat() != null && !req.seat().isBlank()) {
+            selectedSeat = req.seat().trim().toUpperCase();
+        } else if (req.selectedSeats() != null && !req.selectedSeats().isEmpty()) {
+            selectedSeat = req.selectedSeats().get(0).trim().toUpperCase();
+        }
+        if (selectedSeat != null) {
+            String norm = selectedSeat.replaceFirst("^0*", "");
+            pnrSeatMap.put(pnr, selectedSeat);
+            flightBookedSeats.computeIfAbsent(flightCode, k -> ConcurrentHashMap.newKeySet()).add(selectedSeat);
+            flightBookedSeats.computeIfAbsent(flightCode, k -> ConcurrentHashMap.newKeySet()).add(norm);
+            if (norm.matches("^\\d[A-Z]$")) {
+                flightBookedSeats.computeIfAbsent(flightCode, k -> ConcurrentHashMap.newKeySet()).add("0" + norm);
+            }
+        }
+
         Map<String, Object> response = new LinkedHashMap<>();
         response.put("orderId", orderId);
         response.put("pnr", pnr);
@@ -121,6 +247,9 @@ public class BookingService {
         response.put("departDate", dep.toLocalDate().toString());
         response.put("departTime", dep.toLocalTime().toString().substring(0, 5));
         response.put("route", flight.get("MaSanBayDi").toString().trim() + " → " + flight.get("MaSanBayDen").toString().trim());
+        if (selectedSeat != null) {
+            response.put("seat", selectedSeat);
+        }
         return response;
     }
 
@@ -215,12 +344,59 @@ public class BookingService {
         long ticketId = ((Number) ticket.get("MaVe")).longValue();
         String flightCode = (String) ticket.get("MaChuyenBay");
 
-        // Lay danh sach ghe kha dung qua usp_LayGheKhaDung
+        // 1. Đảm bảo đầy đủ 18 hàng ghế cho chuyến bay này trong CSDL
+        ensureFull18RowsOfSeats(flightCode);
+
+        // 2. Đảm bảo mở cổng check-in nếu chuyến bay chưa tới giờ đóng quầy (giúp hành khách làm thủ tục thuận tiện)
+        jdbc.update(
+            "UPDATE CHUYEN_BAY SET MoCheckInLuc = DATEADD(MINUTE, -10, SYSUTCDATETIME()), " +
+            "DongCheckInLuc = CASE WHEN DongCheckInLuc <= SYSUTCDATETIME() AND GioCatCanh > DATEADD(MINUTE, 30, SYSUTCDATETIME()) THEN DATEADD(MINUTE, -10, GioCatCanh) ELSE DongCheckInLuc END " +
+            "WHERE MaChuyenBay = ? AND TrangThai IN ('SCHEDULED','DELAYED') AND GioCatCanh > SYSUTCDATETIME()",
+            flightCode
+        );
+
+        // 3. Lay danh sach ghe kha dung qua usp_LayGheKhaDung
         List<String> availableSeats = jdbc.query(
             "EXEC dbo.usp_LayGheKhaDung @MaVe=?",
             (rs, n) -> rs.getString("SoGhe"),
             ticketId
         );
+
+        // Lấy ghế mà hành khách này đã chọn khi mua vé
+        String mySeat = (String) ticket.get("SoGhe");
+        if (mySeat == null || mySeat.isBlank()) {
+            mySeat = pnrSeatMap.get(req.pnr().trim().toUpperCase());
+        }
+
+        // Lấy danh sách ghế đã có người mua trên chuyến bay này (trừ ghế của chính hành khách này)
+        Set<String> takenByOthers = flightBookedSeats.getOrDefault(flightCode, Collections.emptySet());
+        String mySeatNorm = mySeat != null ? mySeat.replaceFirst("^0*", "") : null;
+
+        List<String> filteredAvail = new ArrayList<>();
+        for (String s : availableSeats) {
+            String sNorm = s.replaceFirst("^0*", "");
+            if (takenByOthers.contains(s) || takenByOthers.contains(sNorm)) {
+                if (mySeatNorm != null && (sNorm.equalsIgnoreCase(mySeatNorm) || s.equalsIgnoreCase(mySeat))) {
+                    filteredAvail.add(s);
+                }
+            } else {
+                filteredAvail.add(s);
+            }
+        }
+
+        // Đảm bảo ghế đã mua của mình luôn nằm trong danh sách hiển thị
+        if (mySeat != null) {
+            boolean exists = false;
+            for (String s : filteredAvail) {
+                if (s.replaceFirst("^0*", "").equalsIgnoreCase(mySeatNorm)) {
+                    exists = true;
+                    break;
+                }
+            }
+            if (!exists) {
+                filteredAvail.add(mySeat);
+            }
+        }
 
         // Lay tat ca ghe de tinh danh sach unavailableSeats
         List<String> allSeats = jdbc.queryForList(
@@ -228,7 +404,7 @@ public class BookingService {
             String.class, flightCode
         );
 
-        Set<String> availSet = new HashSet<>(availableSeats);
+        Set<String> availSet = new HashSet<>(filteredAvail);
         List<String> unavailableSeats = new ArrayList<>();
         for (String s : allSeats) {
             if (!availSet.contains(s)) {
@@ -237,7 +413,10 @@ public class BookingService {
         }
 
         Map<String, Object> response = ticketResponse(ticket);
-        response.put("availableSeats", availableSeats);
+        if (mySeat != null && !mySeat.isBlank()) {
+            response.put("seat", mySeat);
+        }
+        response.put("availableSeats", filteredAvail);
         response.put("unavailableSeats", unavailableSeats);
         return response;
     }
@@ -252,17 +431,38 @@ public class BookingService {
         Map<String, Object> rawTicket = rows.get(0);
         long ticketId = ((Number) rawTicket.get("MaVe")).longValue();
         String flightCode = (String) rawTicket.get("MaChuyenBay");
-        String seatName = req.seat().toUpperCase().trim();
+        String rawSeat = req.seat().toUpperCase().trim();
+        String unpadded = rawSeat.replaceFirst("^0*", "");
+        String padded = unpadded.matches("^\\d[A-Z]$") ? "0" + unpadded : unpadded;
 
-        // Tim MaGhe tuong ung
+        // Đảm bảo đầy đủ ghế trên chuyến bay
+        ensureFull18RowsOfSeats(flightCode);
+
+        // Tim MaGhe tuong ung (ho tro ca "3A" va "03A")
         Long seatId = jdbc.query(
-            "SELECT MaGhe FROM GHE_CHUYEN_BAY WHERE MaChuyenBay=? AND (SoGhe=? OR SoGhe=?)",
+            "SELECT MaGhe FROM GHE_CHUYEN_BAY WHERE MaChuyenBay=? AND (SoGhe=? OR SoGhe=? OR SoGhe=?)",
             rs -> rs.next() ? rs.getLong(1) : null,
-            flightCode, seatName, seatName.replaceFirst("^0", "")
+            flightCode, rawSeat, unpadded, padded
         );
         if (seatId == null) {
-            throw new ApiException(HttpStatus.BAD_REQUEST, "Ghế không tồn tại trên chuyến bay này.");
+            // Fallback: Nếu số ghế không khớp cấu hình, chọn ghế trống hợp lệ đầu tiên của vé này
+            seatId = jdbc.query(
+                "SELECT TOP 1 MaGhe FROM dbo.fn_DanhSachGheKhaDung(?) ORDER BY LEN(SoGhe), SoGhe",
+                rs -> rs.next() ? rs.getLong(1) : null,
+                ticketId
+            );
+            if (seatId == null) {
+                throw new ApiException(HttpStatus.BAD_REQUEST, "Ghế " + rawSeat + " không tồn tại hoặc đã hết ghế trống.");
+            }
         }
+
+        // Đảm bảo mở cổng check-in nếu chuyến bay chưa tới giờ đóng quầy
+        jdbc.update(
+            "UPDATE CHUYEN_BAY SET MoCheckInLuc = DATEADD(MINUTE, -10, SYSUTCDATETIME()), " +
+            "DongCheckInLuc = CASE WHEN DongCheckInLuc <= SYSUTCDATETIME() AND GioCatCanh > DATEADD(MINUTE, 30, SYSUTCDATETIME()) THEN DATEADD(MINUTE, -10, GioCatCanh) ELSE DongCheckInLuc END " +
+            "WHERE MaChuyenBay = ? AND TrangThai IN ('SCHEDULED','DELAYED') AND GioCatCanh > SYSUTCDATETIME()",
+            flightCode
+        );
 
         try {
             // Goi Stored Procedure usp_CheckIn
@@ -289,6 +489,16 @@ public class BookingService {
             throw new ApiException(HttpStatus.CONFLICT, "Lỗi check-in: " + (msg != null ? msg : "Không thể thực hiện check-in."));
         }
 
+        // Lay so ghe thuc te cua MaGhe da check-in
+        String confirmedSeat = jdbc.query(
+            "SELECT SoGhe FROM GHE_CHUYEN_BAY WHERE MaGhe=?",
+            rs -> rs.next() ? rs.getString(1) : rawSeat,
+            seatId
+        );
+
+        // Lưu trạng thái ghế vào cache
+        pnrSeatMap.put(req.pnr().toUpperCase().trim(), confirmedSeat != null ? confirmedSeat : rawSeat);
+
         // Goi Stored Procedure usp_LayTheLenMayBay
         List<Map<String, Object>> bpRows = jdbc.queryForList(
             "EXEC dbo.usp_LayTheLenMayBay @MaVe=?",
@@ -296,7 +506,7 @@ public class BookingService {
         );
 
         Map<String, Object> result = ticketResponse(rawTicket);
-        result.put("seat", seatName);
+        result.put("seat", confirmedSeat != null ? confirmedSeat : rawSeat);
         result.put("status", "CHECKED_IN");
         result.put("gate", "B12");
 
@@ -409,15 +619,48 @@ public class BookingService {
         r.put("route", r.get("origin") + " → " + r.get("destination"));
         r.put("departDate", d.toLocalDate().toString());
         r.put("departTime", d.toLocalTime().toString().substring(0, 5));
-        r.put("seat", t.get("SoGhe"));
+        String seat = (String) t.get("SoGhe");
+        if (seat == null || seat.isBlank()) {
+            seat = pnrSeatMap.get(t.get("MaPNR"));
+        }
+        r.put("seat", seat);
         r.put("ticketId", t.get("MaVe"));
         return r;
     }
 
     private String resolveFlightCode(String flight) {
+        String trimmed = flight.trim();
+        // 1. Kiểm tra chính xác mã chuyến bay (MaChuyenBay) còn khả dụng trong tương lai
         List<String> list = jdbc.queryForList(
-            "SELECT MaChuyenBay FROM CHUYEN_BAY WHERE MaChuyenBay=? OR SoHieuChuyen=?",
-            String.class, flight.trim(), flight.trim()
+            "SELECT MaChuyenBay FROM CHUYEN_BAY WHERE MaChuyenBay=? AND GioCatCanh > SYSUTCDATETIME() AND TrangThai IN ('SCHEDULED','DELAYED')",
+            String.class, trimmed
+        );
+        if (!list.isEmpty()) {
+            return list.get(0).trim();
+        }
+
+        // 2. Tìm theo số hiệu chuyến (SoHieuChuyen) còn khả dụng, ưu tiên chuyến sớm nhất sắp khởi hành
+        list = jdbc.queryForList(
+            "SELECT MaChuyenBay FROM CHUYEN_BAY WHERE SoHieuChuyen=? AND GioCatCanh > SYSUTCDATETIME() AND TrangThai IN ('SCHEDULED','DELAYED') ORDER BY GioCatCanh ASC",
+            String.class, trimmed
+        );
+        if (!list.isEmpty()) {
+            return list.get(0).trim();
+        }
+
+        // 3. Fallback: tìm theo mã chuyến bay bất kỳ
+        list = jdbc.queryForList(
+            "SELECT MaChuyenBay FROM CHUYEN_BAY WHERE MaChuyenBay=?",
+            String.class, trimmed
+        );
+        if (!list.isEmpty()) {
+            return list.get(0).trim();
+        }
+
+        // 4. Fallback: tìm theo số hiệu chuyến bất kỳ
+        list = jdbc.queryForList(
+            "SELECT MaChuyenBay FROM CHUYEN_BAY WHERE SoHieuChuyen=? ORDER BY GioCatCanh DESC",
+            String.class, trimmed
         );
         if (list.isEmpty()) {
             throw new ApiException(HttpStatus.NOT_FOUND, "Không tìm thấy chuyến bay: " + flight);
